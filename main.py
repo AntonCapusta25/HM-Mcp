@@ -107,11 +107,15 @@ async def run_tool(request: ToolRunRequest = Body(...)):
         logger.error(f"Error executing tool '{tool_name}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"An error occurred while running the tool: {e}")
 
-@app.on_event("shutdown")
+@app.on_event("startup")
+async def startup_event():
+    logger.info("🚀 MCP server started")
+
+@app.on_event("shutdown") 
 async def shutdown_event():
     await scraper.close()
     await submitter.close()
-    logger.info("Cleaned up resources.")
+    logger.info("✅ Cleaned up resources.")
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
