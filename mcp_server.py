@@ -1,5 +1,6 @@
 import logging
 import os
+from contextlib import asynccontextmanager
 from typing import Dict, List, Any, Optional
 
 from fastapi import FastAPI, HTTPException, Body
@@ -13,16 +14,34 @@ from form_submitter import UltraFormSubmitter
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize components
+scraper = UltraFormScraper()
+submitter = UltraFormSubmitter()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("🚀 MCP server started")
+    yield
+    # Shutdown
+    await scraper.close()
+    await submitter.close()
+    logger.info("🔒 Cleaned up resources")
+
 app = FastAPI(
     title="Form Automation MCP Server",
     description="A server compliant with the Model Context Protocol for form automation.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
-scraper = UltraFormScraper()
-submitter = UltraFormSubmitter()
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins=["*"], 
+    allow_credentials=True, 
+    allow_methods=["*"], 
+    allow_headers=["*"]
+)
 
 # -- Define MCP Tool Schemas --
 class Tool(BaseModel):
@@ -40,7 +59,6 @@ class ToolRunRequest(BaseModel):
     params: Dict[str, Any]
 
 # -- Tool Definitions --
-# This dictionary holds the metadata and implementation for each tool.
 TOOLS = {
     "analyze_page": {
         "description": "Analyzes a webpage to find forms and detect barriers like CAPTCHAs.",
@@ -63,6 +81,11 @@ TOOLS = {
             "field_data": {"type": "object", "description": "A dictionary of field names to values."},
         },
         "function": submitter.submit_form_ultra,
+    },
+    "test_form_access": {
+        "description": "Tests if a form URL is accessible and identifies potential barriers.",
+        "params": {"url": {"type": "string", "description": "The URL to test."}},
+        "function": scraper.test_url_accessibility,
     },
 }
 
@@ -92,30 +115,38 @@ async def run_tool(request: ToolRunRequest = Body(...)):
     """
     tool_name = request.tool
     params = request.params
-    
+
     if tool_name not in TOOLS:
         raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found.")
-        
+
     logger.info(f"Executing tool '{tool_name}' with params: {params}")
-    
+
     try:
         tool_function = TOOLS[tool_name]["function"]
         # The await is crucial as our tool functions are async
         result = await tool_function(**params)
-        return result
+        return {
+            "success": True,
+            "tool": tool_name,
+            "result": result
+        }
     except Exception as e:
         logger.error(f"Error executing tool '{tool_name}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"An error occurred while running the tool: {e}")
+        return {
+            "success": False,
+            "tool": tool_name,
+            "error": str(e)
+        }
 
-@app.on_event("startup")
-async def startup_event():
-    logger.info("🚀 MCP server started")
-
-@app.on_event("shutdown") 
-async def shutdown_event():
-    await scraper.close()
-    await submitter.close()
-    logger.info("✅ Cleaned up resources.")
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "server": "ultra_form_automation_mcp",
+        "version": "1.0.0",
+        "tools": list(TOOLS.keys())
+    }
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
