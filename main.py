@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ultra-Robust Form Automation MCP Server - Railway Ready
-Properly implements MCP protocol using FastMCP with Railway deployment support
+Ultra-Robust Form Automation MCP Server - Simple Railway Version
+No FastAPI complications, just pure MCP functionality
 """
 
 import asyncio
@@ -11,7 +11,6 @@ import time
 from typing import Dict, Any
 from pydantic import BaseModel, Field
 from mcp.server.fastmcp import FastMCP
-from fastapi.responses import JSONResponse
 
 # Import your existing classes
 from form_scraper import UltraFormScraper
@@ -50,37 +49,28 @@ class FormFieldsData(BaseModel):
 class URLTestData(BaseModel):
     url: str = Field(description="The URL to test for accessibility")
 
-# Health check endpoint for Railway
-@mcp.app.get("/")
-async def root():
-    """Root endpoint"""
-    return JSONResponse({
-        "service": "Ultra Form Automation MCP Server",
-        "status": "running",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "sse": "/sse",
-            "mcp": "/mcp"
-        }
-    })
-
-@mcp.app.get("/health")
-async def health():
-    """Health check endpoint for Railway"""
-    return JSONResponse({
+# Health check tool for Railway monitoring
+@mcp.tool(
+    name="health_check",
+    description="Health check endpoint for Railway deployment monitoring"
+)
+async def health_check() -> Dict[str, Any]:
+    """Health check for Railway"""
+    return {
         "status": "healthy",
         "server": "ultra-form-automation-mcp",
         "version": "1.0.0",
         "timestamp": time.time(),
+        "uptime": "running",
         "tools": [
             "analyze_page",
             "scrape_form_fields", 
             "validate_form_data",
             "submit_form",
-            "test_form_access"
+            "test_form_access",
+            "health_check"
         ]
-    })
+    }
 
 # MCP Tool definitions using decorators
 @mcp.tool(
@@ -197,11 +187,11 @@ if __name__ == "__main__":
     print("  - validate_form_data: Validate form data before submission")
     print("  - submit_form: Submit forms with robust error handling")
     print("  - test_form_access: Test URL accessibility and detect barriers")
+    print("  - health_check: Server health monitoring")
     print()
     print(f"🌐 Server will be available on port {PORT}:")
     print(f"  - SSE mode: http://0.0.0.0:{PORT}/sse")
     print(f"  - Streamable HTTP mode: http://0.0.0.0:{PORT}/mcp")
-    print(f"  - Health check: http://0.0.0.0:{PORT}/health")
     print()
     
     # Detect if running on Railway
@@ -211,7 +201,6 @@ if __name__ == "__main__":
     
     try:
         # Use SSE transport by default
-        # Change to "streamable-http" if you prefer the newer protocol
         mcp.run(transport="sse")
     except KeyboardInterrupt:
         print("\n🛑 Server shutting down...")
