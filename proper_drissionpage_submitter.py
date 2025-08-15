@@ -12,7 +12,8 @@ from typing import Dict, List, Any, Optional
 from urllib.parse import urljoin, urlparse
 import re
 
-from enhanced_form_scraper import BulletproofFormScraper
+# THIS IS THE LINE THAT WAS FIXED
+from proper_drissionpage_scraper import BulletproofFormScraper
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class BulletproofFormSubmitter:
         self.submission_history = []
         
     async def validate_submission_enhanced(self, url: str, field_data: Dict[str, str], 
-                                         form_index: int = 0) -> Dict[str, Any]:
+                                           form_index: int = 0) -> Dict[str, Any]:
         """Bulletproof validation that never crashes"""
         try:
             # Always provide a baseline response
@@ -131,7 +132,7 @@ class BulletproofFormSubmitter:
             }
     
     async def submit_form_enhanced(self, url: str, field_data: Dict[str, str], 
-                                 form_index: int = 0, max_retries: int = 2) -> Dict[str, Any]:
+                                   form_index: int = 0, max_retries: int = 2) -> Dict[str, Any]:
         """Bulletproof form submission that never crashes"""
         try:
             # Always provide a baseline response
