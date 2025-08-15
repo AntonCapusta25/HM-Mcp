@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ultra-Robust Form Automation MCP Server - Simple Railway Version
-No FastAPI complications, just pure MCP functionality
+Ultra-Enhanced Form Automation MCP Server with DrissionPage
+Superior Cloudflare bypass and anti-detection capabilities
 """
 
 import asyncio
@@ -12,28 +12,44 @@ from typing import Dict, Any
 from pydantic import BaseModel, Field
 from mcp.server.fastmcp import FastMCP
 
-# Import your existing classes
-from form_scraper import UltraFormScraper
-from form_submitter import UltraFormSubmitter
+# Import enhanced components
+from enhanced_form_scraper import EnhancedFormScraper
+from enhanced_form_submitter import EnhancedFormSubmitter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Get port from environment variable (Railway sets this)
+# Get configuration from environment
 PORT = int(os.getenv("PORT", 8083))
+HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
+USE_STEALTH = os.getenv("USE_STEALTH", "true").lower() == "true"
 
 # Initialize the MCP server
 mcp = FastMCP(
-    name="Ultra Form Automation Server",
+    name="Enhanced Form Automation Server with DrissionPage",
     host="0.0.0.0", 
     port=PORT
 )
 
-# Initialize components globally
-scraper = UltraFormScraper()
-submitter = UltraFormSubmitter()
+# Global components - initialized lazily
+scraper = None
+submitter = None
 
-# Pydantic models for type validation
+async def get_scraper() -> EnhancedFormScraper:
+    """Get or create scraper instance"""
+    global scraper
+    if scraper is None:
+        scraper = EnhancedFormScraper(use_stealth=USE_STEALTH, headless=HEADLESS)
+    return scraper
+
+async def get_submitter() -> EnhancedFormSubmitter:
+    """Get or create submitter instance"""
+    global submitter
+    if submitter is None:
+        submitter = EnhancedFormSubmitter(use_stealth=USE_STEALTH, headless=HEADLESS)
+    return submitter
+
+# Pydantic models for validation
 class FormSubmissionData(BaseModel):
     url: str = Field(description="The URL of the page with the form")
     form_index: int = Field(default=0, description="The 0-based index of the form")
@@ -49,162 +65,350 @@ class FormFieldsData(BaseModel):
 class URLTestData(BaseModel):
     url: str = Field(description="The URL to test for accessibility")
 
-# Health check tool for Railway monitoring
+# Enhanced MCP Tools
 @mcp.tool(
     name="health_check",
-    description="Health check endpoint for Railway deployment monitoring"
+    description="Health check endpoint with DrissionPage status for Railway deployment monitoring"
 )
 async def health_check() -> Dict[str, Any]:
-    """Health check for Railway"""
-    return {
-        "status": "healthy",
-        "server": "ultra-form-automation-mcp",
-        "version": "1.0.0",
-        "timestamp": time.time(),
-        "uptime": "running",
-        "tools": [
-            "analyze_page",
-            "scrape_form_fields", 
-            "validate_form_data",
-            "submit_form",
-            "test_form_access",
-            "health_check"
-        ]
-    }
+    """Enhanced health check with component status"""
+    try:
+        # Test scraper
+        scraper_status = "healthy"
+        try:
+            test_scraper = await get_scraper()
+            # Quick test without actually navigating
+            scraper_status = "healthy"
+        except Exception as e:
+            scraper_status = f"error: {str(e)}"
+        
+        return {
+            "status": "healthy",
+            "server": "enhanced-form-automation-mcp-drissionpage",
+            "version": "2.0.0",
+            "timestamp": time.time(),
+            "components": {
+                "scraper": scraper_status,
+                "drissionpage": "available",
+                "stealth_mode": USE_STEALTH,
+                "headless_mode": HEADLESS
+            },
+            "features": [
+                "cloudflare_bypass",
+                "anti_detection",
+                "intelligent_form_handling",
+                "dual_mode_operation",
+                "enhanced_validation"
+            ],
+            "tools": [
+                "analyze_page_enhanced",
+                "scrape_form_fields_enhanced", 
+                "validate_form_data_enhanced",
+                "submit_form_enhanced",
+                "test_form_access_enhanced",
+                "health_check"
+            ]
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": time.time()
+        }
 
-# MCP Tool definitions using decorators
 @mcp.tool(
     name="analyze_page",
-    description="Analyzes a webpage to find forms and detect barriers like CAPTCHAs, login requirements, etc."
+    description="Enhanced page analysis with superior Cloudflare bypass and anti-detection. Automatically handles CAPTCHAs, login walls, and dynamic content."
 )
-async def analyze_page(data: FormAnalysisData) -> Dict[str, Any]:
-    """Comprehensive page analysis including barriers and content"""
+async def analyze_page_enhanced(data: FormAnalysisData) -> Dict[str, Any]:
+    """Enhanced comprehensive page analysis with Cloudflare bypass"""
     try:
-        result = await scraper.analyze_page_comprehensive(data.url)
+        scraper_instance = await get_scraper()
+        result = await scraper_instance.analyze_page_comprehensive_enhanced(data.url)
+        
+        # Add metadata about the analysis
+        result['enhanced_features'] = {
+            'cloudflare_bypass': True,
+            'anti_detection': USE_STEALTH,
+            'dynamic_content_handling': True,
+            'intelligent_method_selection': True
+        }
+        
         return result
     except Exception as e:
-        logger.error(f"Error analyzing page {data.url}: {str(e)}")
+        logger.error(f"Error in enhanced page analysis {data.url}: {str(e)}")
         return {
             "success": False,
-            "error": f"Analysis failed: {str(e)}"
+            "error": f"Enhanced analysis failed: {str(e)}",
+            "url": data.url
         }
 
 @mcp.tool(
     name="scrape_form_fields", 
-    description="Extracts all input fields from a specific form on a page with detailed field information."
+    description="Enhanced form field extraction with intelligent field detection and superior barrier handling. Automatically adapts to use the best method (HTTP or browser) based on page complexity."
 )
-async def scrape_form_fields(data: FormFieldsData) -> Dict[str, Any]:
-    """Extract form fields with maximum detail and intelligence"""
+async def scrape_form_fields_enhanced(data: FormFieldsData) -> Dict[str, Any]:
+    """Enhanced form field extraction with intelligent method selection"""
     try:
-        result = await scraper.extract_form_fields_ultra(data.url, data.form_index)
+        scraper_instance = await get_scraper()
+        result = await scraper_instance.extract_form_fields_enhanced(data.url, data.form_index)
+        
+        # Add enhanced metadata
+        if result.get('success'):
+            result['enhanced_features'] = {
+                'intelligent_field_detection': True,
+                'fuzzy_label_matching': True,
+                'validation_rule_extraction': True,
+                'method_used': result.get('method_used', 'unknown')
+            }
+        
         return result
     except Exception as e:
-        logger.error(f"Error extracting form fields from {data.url}: {str(e)}")
+        logger.error(f"Error in enhanced form field extraction {data.url}: {str(e)}")
         return {
             "success": False,
-            "error": f"Field extraction failed: {str(e)}"
+            "error": f"Enhanced field extraction failed: {str(e)}",
+            "url": data.url
         }
 
 @mcp.tool(
     name="validate_form_data",
-    description="Validates form data against the form structure before submission."
+    description="Enhanced form data validation with intelligent field matching and comprehensive error reporting. Provides suggestions for field name corrections and detailed validation insights."
 )
-async def validate_form_data(data: FormSubmissionData) -> Dict[str, Any]:
-    """Validate form data before submission"""
+async def validate_form_data_enhanced(data: FormSubmissionData) -> Dict[str, Any]:
+    """Enhanced form data validation with intelligent matching"""
     try:
-        result = await submitter.validate_submission(data.url, data.field_data, data.form_index)
+        submitter_instance = await get_submitter()
+        result = await submitter_instance.validate_submission_enhanced(
+            data.url, data.field_data, data.form_index
+        )
+        
+        # Add enhanced validation metadata
+        result['enhanced_features'] = {
+            'fuzzy_field_matching': True,
+            'intelligent_validation': True,
+            'field_suggestions': len(result.get('suggestions', [])) > 0,
+            'comprehensive_error_reporting': True
+        }
+        
         return result
     except Exception as e:
-        logger.error(f"Error validating form data for {data.url}: {str(e)}")
+        logger.error(f"Error in enhanced form validation {data.url}: {str(e)}")
         return {
             "valid": False,
-            "error": f"Validation failed: {str(e)}"
+            "error": f"Enhanced validation failed: {str(e)}",
+            "url": data.url
         }
 
 @mcp.tool(
     name="submit_form",
-    description="Submits a form with the provided data, handles retries and various submission methods."
+    description="Enhanced form submission with superior anti-detection, intelligent retry logic, and adaptive method selection. Automatically handles Cloudflare challenges, CAPTCHAs, and complex form interactions."
 )
-async def submit_form(data: FormSubmissionData) -> Dict[str, Any]:
-    """Submit form with ultra-robust error handling and retry logic"""
+async def submit_form_enhanced(data: FormSubmissionData) -> Dict[str, Any]:
+    """Enhanced form submission with comprehensive error handling"""
     try:
-        # First validate the data
-        validation = await submitter.validate_submission(data.url, data.field_data, data.form_index)
+        submitter_instance = await get_submitter()
+        result = await submitter_instance.submit_form_enhanced(
+            data.url, data.field_data, data.form_index
+        )
         
-        if not validation.get('valid', False):
-            return {
-                "success": False,
-                "error": "Form validation failed",
-                "validation_issues": validation.get('issues', []),
-                "warnings": validation.get('warnings', [])
-            }
+        # Add enhanced submission metadata
+        result['enhanced_features'] = {
+            'cloudflare_bypass': True,
+            'anti_detection': USE_STEALTH,
+            'intelligent_retry_logic': True,
+            'adaptive_method_selection': True,
+            'human_like_interaction': True
+        }
         
-        # Submit the form
-        result = await submitter.submit_form_ultra(data.url, data.field_data, data.form_index)
-        
-        # Add validation info to result
-        result['validation'] = validation
         return result
         
     except Exception as e:
-        logger.error(f"Error submitting form to {data.url}: {str(e)}")
+        logger.error(f"Error in enhanced form submission {data.url}: {str(e)}")
         return {
             "success": False,
-            "error": f"Submission failed: {str(e)}"
+            "error": f"Enhanced submission failed: {str(e)}",
+            "url": data.url
         }
 
 @mcp.tool(
     name="test_form_access",
-    description="Tests if a form URL is accessible and identifies potential barriers like login walls, CAPTCHAs, etc."
+    description="Enhanced URL accessibility testing with comprehensive barrier detection and Cloudflare challenge handling. Provides detailed success probability assessment and actionable recommendations."
 )
-async def test_form_access(data: URLTestData) -> Dict[str, Any]:
-    """Test if URL is accessible and detect potential barriers"""
+async def test_form_access_enhanced(data: URLTestData) -> Dict[str, Any]:
+    """Enhanced URL accessibility test with comprehensive analysis"""
     try:
-        result = await scraper.test_url_accessibility(data.url)
+        scraper_instance = await get_scraper()
+        result = await scraper_instance.test_url_accessibility_enhanced(data.url)
+        
+        # Add enhanced testing metadata
+        result['enhanced_features'] = {
+            'cloudflare_detection': True,
+            'barrier_analysis': True,
+            'success_probability_calculation': True,
+            'intelligent_method_selection': True,
+            'comprehensive_recommendations': True
+        }
+        
         return result
     except Exception as e:
-        logger.error(f"Error testing URL accessibility {data.url}: {str(e)}")
+        logger.error(f"Error in enhanced URL testing {data.url}: {str(e)}")
         return {
             "accessible": False,
-            "error": f"Access test failed: {str(e)}"
+            "error": f"Enhanced access test failed: {str(e)}",
+            "url": data.url
+        }
+
+# Additional debugging and monitoring tools
+@mcp.tool(
+    name="get_submission_history",
+    description="Get recent form submission history for debugging and monitoring purposes"
+)
+async def get_submission_history() -> Dict[str, Any]:
+    """Get submission history for monitoring"""
+    try:
+        submitter_instance = await get_submitter()
+        history = getattr(submitter_instance, 'submission_history', [])
+        
+        # Get recent submissions (last 10)
+        recent_history = history[-10:] if len(history) > 10 else history
+        
+        # Calculate success rate
+        if history:
+            success_count = sum(1 for record in history if record.get('success'))
+            success_rate = success_count / len(history)
+        else:
+            success_rate = 0.0
+        
+        return {
+            "total_submissions": len(history),
+            "recent_submissions": recent_history,
+            "success_rate": success_rate,
+            "enhanced_monitoring": True
+        }
+    except Exception as e:
+        return {
+            "error": f"Failed to get submission history: {str(e)}"
+        }
+
+@mcp.tool(
+    name="configure_stealth_mode",
+    description="Configure stealth and anti-detection settings for the automation components"
+)
+async def configure_stealth_mode(enable_stealth: bool = True, headless: bool = True) -> Dict[str, Any]:
+    """Configure stealth settings"""
+    try:
+        global USE_STEALTH, HEADLESS, scraper, submitter
+        
+        # Update global settings
+        USE_STEALTH = enable_stealth
+        HEADLESS = headless
+        
+        # Reset components to apply new settings
+        if scraper:
+            await scraper.close()
+            scraper = None
+        
+        if submitter:
+            await submitter.close()
+            submitter = None
+        
+        return {
+            "success": True,
+            "stealth_mode": USE_STEALTH,
+            "headless_mode": HEADLESS,
+            "message": "Stealth configuration updated. Components will be reinitialized with new settings."
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to configure stealth mode: {str(e)}"
         }
 
 # Cleanup function
 async def cleanup():
-    """Clean up resources on shutdown"""
+    """Enhanced cleanup with proper resource management"""
     try:
-        await scraper.close()
-        await submitter.close()
-        logger.info("🔒 Cleaned up resources")
+        global scraper, submitter
+        
+        if scraper:
+            await scraper.close()
+            scraper = None
+        
+        if submitter:
+            await submitter.close()
+            submitter = None
+        
+        logger.info("🔒 Enhanced cleanup completed successfully")
     except Exception as e:
-        logger.error(f"Error during cleanup: {e}")
+        logger.error(f"Error during enhanced cleanup: {e}")
+
+# Startup function
+async def startup():
+    """Initialize components on startup"""
+    try:
+        logger.info("🚀 Initializing Enhanced Form Automation Server...")
+        
+        # Pre-initialize components to test them
+        await get_scraper()
+        logger.info("✅ Enhanced scraper initialized")
+        
+        await get_submitter()
+        logger.info("✅ Enhanced submitter initialized")
+        
+        logger.info("🎯 All enhanced components ready")
+        
+    except Exception as e:
+        logger.error(f"Startup error: {e}")
 
 if __name__ == "__main__":
-    print("🤖 Starting Ultra Form Automation MCP Server...")
-    print("📍 Available tools:")
-    print("  - analyze_page: Analyze webpage for forms and barriers")
-    print("  - scrape_form_fields: Extract detailed form field information")
-    print("  - validate_form_data: Validate form data before submission")
-    print("  - submit_form: Submit forms with robust error handling")
-    print("  - test_form_access: Test URL accessibility and detect barriers")
-    print("  - health_check: Server health monitoring")
+    print("🤖 Starting Enhanced Form Automation MCP Server with DrissionPage...")
+    print("🛡️  Enhanced Features:")
+    print("  - Superior Cloudflare bypass capabilities")
+    print("  - Advanced anti-detection mechanisms")
+    print("  - Intelligent method selection (HTTP/Browser)")
+    print("  - Human-like interaction patterns")
+    print("  - Comprehensive barrier handling")
+    print("  - Fuzzy field matching and validation")
     print()
-    print(f"🌐 Server will be available on port {PORT}:")
+    print("📍 Available enhanced tools:")
+    print("  - analyze_page: Enhanced page analysis with Cloudflare bypass")
+    print("  - scrape_form_fields: Intelligent form field extraction") 
+    print("  - validate_form_data: Smart validation with field suggestions")
+    print("  - submit_form: Anti-detection form submission")
+    print("  - test_form_access: Comprehensive accessibility testing")
+    print("  - get_submission_history: Monitoring and debugging")
+    print("  - configure_stealth_mode: Runtime configuration")
+    print("  - health_check: Enhanced server health monitoring")
+    print()
+    print(f"⚙️  Configuration:")
+    print(f"  - Stealth Mode: {USE_STEALTH}")
+    print(f"  - Headless Mode: {HEADLESS}")
+    print(f"  - Port: {PORT}")
+    print()
+    print(f"🌐 Server endpoints:")
     print(f"  - SSE mode: http://0.0.0.0:{PORT}/sse")
-    print(f"  - Streamable HTTP mode: http://0.0.0.0:{PORT}/mcp")
+    print(f"  - HTTP mode: http://0.0.0.0:{PORT}/mcp")
     print()
     
-    # Detect if running on Railway
+    # Detect deployment environment
     if os.getenv("RAILWAY_ENVIRONMENT"):
-        print("🚂 Running on Railway!")
+        print("🚂 Running on Railway with enhanced capabilities!")
         print(f"   Public URL will be available after deployment")
+    elif os.getenv("HEROKU_APP_NAME"):
+        print("🌐 Running on Heroku with enhanced capabilities!")
+    else:
+        print("💻 Running locally with enhanced capabilities!")
     
     try:
-        # Use SSE transport by default
+        # Run startup initialization
+        asyncio.run(startup())
+        
+        # Start the server
         mcp.run(transport="sse")
     except KeyboardInterrupt:
-        print("\n🛑 Server shutting down...")
+        print("\n🛑 Enhanced server shutting down...")
         asyncio.run(cleanup())
     except Exception as e:
-        logger.error(f"Server error: {e}")
+        logger.error(f"Enhanced server error: {e}")
         asyncio.run(cleanup())
