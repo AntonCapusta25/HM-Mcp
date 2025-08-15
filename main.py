@@ -17,9 +17,9 @@ try:
 except ImportError:
     from fastmcp import FastMCP
 
-# Import enhanced components
-from enhanced_form_scraper import EnhancedFormScraper
-from enhanced_form_submitter import EnhancedFormSubmitter
+# Import enhanced components with correct names
+from proper_drissionpage_scraper import EnhancedFormScraper
+from proper_drissionpage_submitter import EnhancedFormSubmitter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
