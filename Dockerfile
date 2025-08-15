@@ -1,64 +1,56 @@
-# Form Automation MCP Server - Fixed Dockerfile
+# Ultra-Reliable Dockerfile using system Chromium (no repository issues)
 FROM python:3.11-slim
 
-# Set environment variables early
+# Environment variables
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
 ENV PORT=8000
 ENV HEADLESS=true
 ENV USE_STEALTH=true
-ENV DEBUG=false
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies including Chrome
+# Install system Chromium (most reliable method)
 RUN apt-get update && apt-get install -y \
-    wget \
+    chromium \
     curl \
-    gnupg \
-    unzip \
-    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Verify Chrome installation
-RUN google-chrome --version
+# Verify browser installation and set path
+RUN chromium --version && \
+    ln -sf /usr/bin/chromium /usr/bin/google-chrome
 
-# Set working directory
+# Set Chrome binary path for DrissionPage
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROME_PATH=/usr/bin/chromium
+
 WORKDIR /app
 
-# Copy requirements first (for better Docker layer caching)
+# Install Python dependencies
 COPY requirements.txt .
-
-# Upgrade pip and install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY bulletproof_scraper.py .
 COPY bulletproof_submitter.py .
 COPY server.py .
-COPY start.sh .
 
-# Make startup script executable
-RUN chmod +x start.sh
+# Create non-root user and set permissions
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app && \
+    mkdir -p /home/appuser/.config/chromium && \
+    chown -R appuser:appuser /home/appuser/.config
 
-# Create non-root user for security
-RUN useradd -m -u 1000 appuser \
-    && chown -R appuser:appuser /app
-
-# Switch to non-root user
 USER appuser
 
-# Create Chrome data directory with proper permissions
-RUN mkdir -p /home/appuser/.config/google-chrome
+# Set Chrome flags for container environment
+ENV CHROME_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding"
 
-# Expose port
 EXPOSE $PORT
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:$PORT/health || exit 1
 
-# Use startup script
-CMD ["./start.sh"]
+# Start server
+CMD ["python", "server.py"]
