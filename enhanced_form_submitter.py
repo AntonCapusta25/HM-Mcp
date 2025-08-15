@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ultra-Enhanced Form Submitter with DrissionPage
-Handles form submission with superior Cloudflare bypass and reliability
+Ultra-Enhanced Form Submitter with DrissionPage (PROPERLY FIXED)
+Using correct DrissionPage API based on official documentation
 """
 
 import asyncio
@@ -12,12 +12,10 @@ from typing import Dict, List, Any, Optional
 from urllib.parse import urljoin, urlparse
 import re
 
-# DrissionPage imports
+# DrissionPage imports with correct API
 from DrissionPage import ChromiumPage, SessionPage
-from DrissionPage.common import Actions
-from DrissionPage.errors import ElementNotFoundError, PageDisconnectedError
 
-from enhanced_form_scraper import EnhancedFormScraper
+from proper_drissionpage_scraper import EnhancedFormScraper
 
 logger = logging.getLogger(__name__)
 
@@ -430,14 +428,21 @@ class EnhancedFormSubmitter:
             
             # Handle different field types
             if tag == 'select':
-                # Handle select dropdowns
-                options = element.eles('tag:option')
-                for option in options:
-                    option_value = option.attr('value') or option.text
-                    if option_value.lower() == value.lower() or option.text.lower() == value.lower():
-                        option.click()
-                        await asyncio.sleep(0.5)
-                        return True
+                # Handle select dropdowns using DrissionPage API
+                try:
+                    # Try to select by text first
+                    element.select(value)
+                    await asyncio.sleep(0.5)
+                    return True
+                except:
+                    # Try to select by value
+                    options = element.eles('tag:option')
+                    for option in options:
+                        option_value = option.attr('value') or option.text
+                        if option_value.lower() == value.lower():
+                            option.click()
+                            await asyncio.sleep(0.5)
+                            return True
                 return False
                 
             elif field_type == 'checkbox':
@@ -452,13 +457,16 @@ class EnhancedFormSubmitter:
                 # Handle radio buttons
                 radio_name = element.attr('name')
                 if radio_name:
-                    radio_group = element.parent().eles(f'css:input[name="{radio_name}"]')
-                    for radio in radio_group:
-                        radio_value = radio.attr('value') or ''
-                        if radio_value.lower() == value.lower():
-                            radio.click()
-                            await asyncio.sleep(0.3)
-                            return True
+                    # Find all radio buttons with the same name
+                    form = element.parent('tag:form')
+                    if form:
+                        radio_group = form.eles(f'css:input[name="{radio_name}"]')
+                        for radio in radio_group:
+                            radio_value = radio.attr('value') or ''
+                            if radio_value.lower() == value.lower():
+                                radio.click()
+                                await asyncio.sleep(0.3)
+                                return True
                 return False
                 
             elif field_type == 'file':
@@ -467,28 +475,18 @@ class EnhancedFormSubmitter:
                 return False
                 
             else:
-                # Handle text inputs, textareas, etc.
+                # Handle text inputs, textareas, etc. using DrissionPage input method
                 element.clear()
                 await asyncio.sleep(0.1)
                 
-                # Type value with human-like typing
-                await self._human_like_typing(element, value)
+                # Use DrissionPage's input method
+                element.input(value)
+                await asyncio.sleep(0.1)
                 return True
                 
         except Exception as e:
             logger.error(f"Error filling field {field_info.get('identifier', 'unknown')}: {str(e)}")
             return False
-    
-    async def _human_like_typing(self, element, text: str):
-        """Type text with human-like delays and patterns"""
-        element.click()  # Focus the element
-        await asyncio.sleep(0.1)
-        
-        # Type with random delays between characters
-        for char in text:
-            element.input(char)
-            # Random delay between 50-150ms
-            await asyncio.sleep(random.uniform(0.05, 0.15))
     
     async def _handle_form_submission(self, form, browser_page) -> Dict[str, Any]:
         """Handle form submission with multiple strategies"""
@@ -498,30 +496,26 @@ class EnhancedFormSubmitter:
             
             if submit_buttons:
                 submit_button = submit_buttons[0]
-                logger.info(f"Clicking submit button: {submit_button.attr('value') or submit_button.text}")
+                button_text = submit_button.attr('value') or submit_button.text
+                logger.info(f"Clicking submit button: {button_text}")
                 submit_button.click()
                 await asyncio.sleep(2)
                 return {'method': 'submit_button', 'success': True}
             
-            # Strategy 2: Submit form directly
+            # Strategy 2: Submit form directly using DrissionPage
             logger.info("No submit button found, submitting form directly")
-            form.submit()
-            await asyncio.sleep(2)
-            return {'method': 'form_submit', 'success': True}
+            # DrissionPage doesn't have a direct form.submit() method, so we'll try pressing Enter
+            inputs = form.eles('css:input[type="text"], input[type="email"], textarea')
+            if inputs:
+                last_input = inputs[-1]
+                last_input.click()
+                last_input.input('\n')  # Press Enter
+                await asyncio.sleep(2)
+                return {'method': 'enter_key', 'success': True}
+            
+            return {'method': 'failed', 'success': False, 'error': 'No submission method found'}
             
         except Exception as e:
-            # Strategy 3: Press Enter in the last input field
-            try:
-                inputs = form.eles('css:input[type="text"], input[type="email"], textarea')
-                if inputs:
-                    last_input = inputs[-1]
-                    last_input.click()
-                    last_input.input('\n')  # Press Enter
-                    await asyncio.sleep(2)
-                    return {'method': 'enter_key', 'success': True}
-            except:
-                pass
-            
             return {'method': 'failed', 'success': False, 'error': str(e)}
     
     async def _process_submission_response(self, page, original_url: str) -> Dict[str, Any]:
@@ -534,10 +528,7 @@ class EnhancedFormSubmitter:
             final_url = page.url
             
             # Get page content
-            if hasattr(page, 'html'):
-                content = page.html
-            else:
-                content = page.raw_data.decode('utf-8', errors='ignore')
+            content = page.html
             
             # Analyze response
             success_indicators = self._detect_success_indicators(content, final_url, original_url)
