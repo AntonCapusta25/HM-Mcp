@@ -12,18 +12,19 @@ DrissionPage>=4.0.0
 requests>=2.31.0
 urllib3>=2.0.0
 
-# Async support
-asyncio-compat>=0.1.0
-
 # Logging and utilities
 python-dotenv>=1.0.0
 
-# Optional: Better Chrome handling
-selenium>=4.15.0
+# Optional: Better Chrome handling (only if needed)
+# selenium>=4.15.0
 
 # Development/testing (optional)
-pytest>=7.0.0
-pytest-asyncio>=0.21.0
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0
+
+# Railway deployment (if using Railway)
+# gunicorn>=21.0.0
+# uvicorn>=0.23.0
 
 # System dependencies notes:
 # - Chrome/Chromium browser required for DrissionPage
@@ -31,7 +32,3 @@ pytest-asyncio>=0.21.0
 # - On CentOS/RHEL: sudo yum install chromium
 # - On macOS: brew install chromium
 # - On Windows: Download Chrome manually
-
-# Railway deployment (if using Railway)
-gunicorn>=21.0.0
-uvicorn>=0.23.0
