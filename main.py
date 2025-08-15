@@ -8,9 +8,14 @@ import asyncio
 import logging
 import os
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
-from mcp.server.fastmcp import FastMCP
+
+# Import FastMCP with compatibility for newer versions
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError:
+    from fastmcp import FastMCP
 
 # Import enhanced components
 from enhanced_form_scraper import EnhancedFormScraper
@@ -24,12 +29,21 @@ PORT = int(os.getenv("PORT", 8083))
 HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
 USE_STEALTH = os.getenv("USE_STEALTH", "true").lower() == "true"
 
-# Initialize the MCP server
-mcp = FastMCP(
-    name="Enhanced Form Automation Server with DrissionPage",
-    host="0.0.0.0", 
-    port=PORT
-)
+# Initialize the MCP server with updated configuration
+try:
+    # Try newer FastMCP initialization
+    mcp = FastMCP(
+        "Enhanced Form Automation Server with DrissionPage",
+        host="0.0.0.0", 
+        port=PORT
+    )
+except TypeError:
+    # Fall back to older initialization style
+    mcp = FastMCP(
+        name="Enhanced Form Automation Server with DrissionPage",
+        host="0.0.0.0", 
+        port=PORT
+    )
 
 # Global components - initialized lazily
 scraper = None
@@ -66,12 +80,9 @@ class URLTestData(BaseModel):
     url: str = Field(description="The URL to test for accessibility")
 
 # Enhanced MCP Tools
-@mcp.tool(
-    name="health_check",
-    description="Health check endpoint with DrissionPage status for Railway deployment monitoring"
-)
+@mcp.tool()
 async def health_check() -> Dict[str, Any]:
-    """Enhanced health check with component status"""
+    """Health check endpoint with DrissionPage status for Railway deployment monitoring"""
     try:
         # Test scraper
         scraper_status = "healthy"
@@ -101,11 +112,11 @@ async def health_check() -> Dict[str, Any]:
                 "enhanced_validation"
             ],
             "tools": [
-                "analyze_page_enhanced",
-                "scrape_form_fields_enhanced", 
-                "validate_form_data_enhanced",
-                "submit_form_enhanced",
-                "test_form_access_enhanced",
+                "analyze_page",
+                "scrape_form_fields", 
+                "validate_form_data",
+                "submit_form",
+                "test_form_access",
                 "health_check"
             ]
         }
@@ -116,12 +127,9 @@ async def health_check() -> Dict[str, Any]:
             "timestamp": time.time()
         }
 
-@mcp.tool(
-    name="analyze_page",
-    description="Enhanced page analysis with superior Cloudflare bypass and anti-detection. Automatically handles CAPTCHAs, login walls, and dynamic content."
-)
-async def analyze_page_enhanced(data: FormAnalysisData) -> Dict[str, Any]:
-    """Enhanced comprehensive page analysis with Cloudflare bypass"""
+@mcp.tool()
+async def analyze_page(data: FormAnalysisData) -> Dict[str, Any]:
+    """Enhanced page analysis with superior Cloudflare bypass and anti-detection. Automatically handles CAPTCHAs, login walls, and dynamic content."""
     try:
         scraper_instance = await get_scraper()
         result = await scraper_instance.analyze_page_comprehensive_enhanced(data.url)
@@ -143,12 +151,9 @@ async def analyze_page_enhanced(data: FormAnalysisData) -> Dict[str, Any]:
             "url": data.url
         }
 
-@mcp.tool(
-    name="scrape_form_fields", 
-    description="Enhanced form field extraction with intelligent field detection and superior barrier handling. Automatically adapts to use the best method (HTTP or browser) based on page complexity."
-)
-async def scrape_form_fields_enhanced(data: FormFieldsData) -> Dict[str, Any]:
-    """Enhanced form field extraction with intelligent method selection"""
+@mcp.tool()
+async def scrape_form_fields(data: FormFieldsData) -> Dict[str, Any]:
+    """Enhanced form field extraction with intelligent field detection and superior barrier handling. Automatically adapts to use the best method (HTTP or browser) based on page complexity."""
     try:
         scraper_instance = await get_scraper()
         result = await scraper_instance.extract_form_fields_enhanced(data.url, data.form_index)
@@ -171,12 +176,9 @@ async def scrape_form_fields_enhanced(data: FormFieldsData) -> Dict[str, Any]:
             "url": data.url
         }
 
-@mcp.tool(
-    name="validate_form_data",
-    description="Enhanced form data validation with intelligent field matching and comprehensive error reporting. Provides suggestions for field name corrections and detailed validation insights."
-)
-async def validate_form_data_enhanced(data: FormSubmissionData) -> Dict[str, Any]:
-    """Enhanced form data validation with intelligent matching"""
+@mcp.tool()
+async def validate_form_data(data: FormSubmissionData) -> Dict[str, Any]:
+    """Enhanced form data validation with intelligent field matching and comprehensive error reporting. Provides suggestions for field name corrections and detailed validation insights."""
     try:
         submitter_instance = await get_submitter()
         result = await submitter_instance.validate_submission_enhanced(
@@ -200,12 +202,9 @@ async def validate_form_data_enhanced(data: FormSubmissionData) -> Dict[str, Any
             "url": data.url
         }
 
-@mcp.tool(
-    name="submit_form",
-    description="Enhanced form submission with superior anti-detection, intelligent retry logic, and adaptive method selection. Automatically handles Cloudflare challenges, CAPTCHAs, and complex form interactions."
-)
-async def submit_form_enhanced(data: FormSubmissionData) -> Dict[str, Any]:
-    """Enhanced form submission with comprehensive error handling"""
+@mcp.tool()
+async def submit_form(data: FormSubmissionData) -> Dict[str, Any]:
+    """Enhanced form submission with superior anti-detection, intelligent retry logic, and adaptive method selection. Automatically handles Cloudflare challenges, CAPTCHAs, and complex form interactions."""
     try:
         submitter_instance = await get_submitter()
         result = await submitter_instance.submit_form_enhanced(
@@ -231,12 +230,9 @@ async def submit_form_enhanced(data: FormSubmissionData) -> Dict[str, Any]:
             "url": data.url
         }
 
-@mcp.tool(
-    name="test_form_access",
-    description="Enhanced URL accessibility testing with comprehensive barrier detection and Cloudflare challenge handling. Provides detailed success probability assessment and actionable recommendations."
-)
-async def test_form_access_enhanced(data: URLTestData) -> Dict[str, Any]:
-    """Enhanced URL accessibility test with comprehensive analysis"""
+@mcp.tool()
+async def test_form_access(data: URLTestData) -> Dict[str, Any]:
+    """Enhanced URL accessibility testing with comprehensive barrier detection and Cloudflare challenge handling. Provides detailed success probability assessment and actionable recommendations."""
     try:
         scraper_instance = await get_scraper()
         result = await scraper_instance.test_url_accessibility_enhanced(data.url)
@@ -260,12 +256,9 @@ async def test_form_access_enhanced(data: URLTestData) -> Dict[str, Any]:
         }
 
 # Additional debugging and monitoring tools
-@mcp.tool(
-    name="get_submission_history",
-    description="Get recent form submission history for debugging and monitoring purposes"
-)
+@mcp.tool()
 async def get_submission_history() -> Dict[str, Any]:
-    """Get submission history for monitoring"""
+    """Get recent form submission history for debugging and monitoring purposes"""
     try:
         submitter_instance = await get_submitter()
         history = getattr(submitter_instance, 'submission_history', [])
@@ -291,12 +284,9 @@ async def get_submission_history() -> Dict[str, Any]:
             "error": f"Failed to get submission history: {str(e)}"
         }
 
-@mcp.tool(
-    name="configure_stealth_mode",
-    description="Configure stealth and anti-detection settings for the automation components"
-)
+@mcp.tool()
 async def configure_stealth_mode(enable_stealth: bool = True, headless: bool = True) -> Dict[str, Any]:
-    """Configure stealth settings"""
+    """Configure stealth and anti-detection settings for the automation components"""
     try:
         global USE_STEALTH, HEADLESS, scraper, submitter
         
@@ -385,10 +375,13 @@ if __name__ == "__main__":
     print(f"  - Stealth Mode: {USE_STEALTH}")
     print(f"  - Headless Mode: {HEADLESS}")
     print(f"  - Port: {PORT}")
+    print(f"  - FastMCP Version: {getattr(mcp, '__version__', 'unknown')}")
     print()
     print(f"🌐 Server endpoints:")
     print(f"  - SSE mode: http://0.0.0.0:{PORT}/sse")
     print(f"  - HTTP mode: http://0.0.0.0:{PORT}/mcp")
+    if hasattr(mcp, '_fastapi_app'):
+        print(f"  - FastAPI docs: http://0.0.0.0:{PORT}/docs")
     print()
     
     # Detect deployment environment
@@ -404,8 +397,14 @@ if __name__ == "__main__":
         # Run startup initialization
         asyncio.run(startup())
         
-        # Start the server
-        mcp.run(transport="sse")
+        # Start the server with compatibility check
+        try:
+            # Try newer FastMCP run method
+            mcp.run(transport="sse")
+        except TypeError:
+            # Fall back to older method if needed
+            mcp.run()
+            
     except KeyboardInterrupt:
         print("\n🛑 Enhanced server shutting down...")
         asyncio.run(cleanup())
