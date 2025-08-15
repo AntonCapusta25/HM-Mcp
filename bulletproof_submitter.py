@@ -389,16 +389,20 @@ class BulletproofFormSubmitter:
             logger.info(f"🔍 DEBUG: Form object type: {type(form)}")
             logger.info(f"🔍 DEBUG: Form HTML preview: {str(form)[:200] if form else 'NO FORM'}")
             
-            # Get field elements with timeout and debugging
+            # Get field elements using CSS selectors (FIXED!)
             try:
-                logger.info(f"🔍 DEBUG: Looking for form elements...")
-                field_elements = form.eles('tag:input, tag:textarea, tag:select')
-                logger.info(f"🔍 DEBUG: Found {len(field_elements)} form elements")
+                logger.info(f"🔍 DEBUG: Looking for form elements with CSS selectors...")
                 
-                # Also try alternative selectors
-                alt_inputs = form.eles('css:input')
-                alt_textareas = form.eles('css:textarea')
-                logger.info(f"🔍 DEBUG: Alternative count - inputs: {len(alt_inputs)}, textareas: {len(alt_textareas)}")
+                # Use CSS selectors instead of tag selectors (this is the fix!)
+                input_elements = form.eles('css:input')
+                textarea_elements = form.eles('css:textarea') 
+                select_elements = form.eles('css:select')
+                
+                # Combine all field elements
+                field_elements = input_elements + textarea_elements + select_elements
+                
+                logger.info(f"🔍 DEBUG: Found {len(input_elements)} inputs, {len(textarea_elements)} textareas, {len(select_elements)} selects")
+                logger.info(f"🔍 DEBUG: Total field elements: {len(field_elements)}")
                 
             except Exception as e:
                 logger.error(f"❌ DEBUG: Could not find form fields: {e}")
