@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Ultra-Enhanced Form Scraper with DrissionPage (FIXED)
-Handles Cloudflare, CAPTCHAs, login walls, and any other barriers
+Ultra-Enhanced Form Scraper with DrissionPage (PROPERLY FIXED)
+Using correct DrissionPage API based on official documentation
 """
 
 import asyncio
@@ -12,11 +12,9 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple, Union
 from urllib.parse import urljoin, urlparse
 import json
-from contextlib import asynccontextmanager
 
 # DrissionPage imports with correct API
 from DrissionPage import ChromiumPage, ChromiumOptions, SessionPage
-from DrissionPage.common import Actions
 
 logger = logging.getLogger(__name__)
 
@@ -34,64 +32,62 @@ class EnhancedFormScraper:
         ]
         
     def _get_stealth_options(self) -> ChromiumOptions:
-        """Configure stealth browser options for maximum anti-detection"""
+        """Configure stealth browser options using correct DrissionPage API"""
         co = ChromiumOptions()
         
-        # Basic stealth settings
-        if self.headless:
-            co.headless(True)
-        
-        # Anti-detection arguments using correct DrissionPage API
-        args = [
-            '--no-sandbox',
-            '--disable-blink-features=AutomationControlled',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-web-security',
-            '--disable-features=site-per-process',
-            '--no-first-run',
-            '--no-service-autorun',
-            '--no-default-browser-check',
-            '--password-store=basic',
-            '--use-mock-keychain'
-        ]
-        
-        # Add arguments using correct method
-        for arg in args:
-            co.add_arg(arg)
-        
-        # Randomize user agent
-        user_agent = random.choice(self.user_agents)
-        co.set_user_agent(user_agent)
-        
-        # Randomize window size
-        widths = [1366, 1920, 1440, 1536, 1024]
-        heights = [768, 1080, 900, 864, 768]
-        width = random.choice(widths)
-        height = random.choice(heights)
-        co.set_window_size(width, height)
-        
-        # Set additional preferences for stealth
-        prefs = {
-            'profile.default_content_setting_values.notifications': 2,
-            'profile.default_content_settings.popups': 0,
-            'profile.managed_default_content_settings.images': 2,  # Block images for speed
-            'profile.default_content_setting_values.media_stream': 2,
-        }
-        
-        for key, value in prefs.items():
-            co.set_pref(key, value)
+        try:
+            # Basic stealth settings
+            if self.headless:
+                co.headless(True)
+            
+            # Set user agent using correct method
+            user_agent = random.choice(self.user_agents)
+            co.set_user_agent(user_agent)
+            
+            # Anti-detection arguments using correct set_argument method
+            stealth_args = [
+                '--no-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-features=VizDisplayCompositor',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-web-security',
+                '--disable-features=site-per-process',
+                '--no-first-run',
+                '--no-service-autorun',
+                '--no-default-browser-check',
+                '--password-store=basic',
+                '--use-mock-keychain'
+            ]
+            
+            for arg in stealth_args:
+                co.set_argument(arg)
+            
+            # Randomize window size
+            widths = [1366, 1920, 1440, 1536, 1024]
+            heights = [768, 1080, 900, 864, 768]
+            width = random.choice(widths)
+            height = random.choice(heights)
+            co.set_window_size(width, height)
+            
+            # Disable images for faster loading (optional)
+            co.no_imgs(True)
+            
+            # Set other preferences
+            co.mute(True)  # Mute audio
+            
+        except Exception as e:
+            logger.warning(f"Error configuring stealth options: {e}")
         
         return co
     
     async def _get_browser_page(self) -> ChromiumPage:
         """Get or create browser page with stealth configuration"""
-        if self.browser_page is None or not self.browser_page.states.is_alive:
+        if self.browser_page is None or not getattr(self.browser_page, 'states', None) or not self.browser_page.states.is_alive:
             try:
                 if self.use_stealth:
                     options = self._get_stealth_options()
-                    self.browser_page = ChromiumPage(addr_or_opts=options)
+                    self.browser_page = ChromiumPage(options)
                 else:
                     self.browser_page = ChromiumPage()
                 
@@ -102,7 +98,11 @@ class EnhancedFormScraper:
             except Exception as e:
                 logger.error(f"Failed to create browser page: {e}")
                 # Fallback to basic configuration
-                self.browser_page = ChromiumPage()
+                try:
+                    self.browser_page = ChromiumPage()
+                except Exception as fallback_error:
+                    logger.error(f"Even basic browser creation failed: {fallback_error}")
+                    raise
         
         return self.browser_page
     
@@ -124,16 +124,6 @@ class EnhancedFormScraper:
             
             # Mock chrome object
             "window.chrome = { runtime: {} };",
-            
-            # Mock permissions
-            """
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                    Promise.resolve({ state: Notification.permission }) :
-                    originalQuery(parameters)
-            );
-            """
         ]
         
         for script in stealth_scripts:
@@ -146,9 +136,14 @@ class EnhancedFormScraper:
         """Get or create session page for HTTP requests"""
         if self.session_page is None:
             self.session_page = SessionPage()
-            # Set random user agent
+            
+            # SessionPage uses headers instead of set_user_agent
             user_agent = random.choice(self.user_agents)
-            self.session_page.set_user_agent(user_agent)
+            try:
+                # Set headers directly for SessionPage
+                self.session_page.set_headers({'User-Agent': user_agent})
+            except Exception as e:
+                logger.debug(f"Failed to set headers on session: {e}")
         
         return self.session_page
     
@@ -159,7 +154,7 @@ class EnhancedFormScraper:
             session = self._get_session_page()
             try:
                 session.get(url, timeout=10)
-                initial_status = session.response.status_code
+                initial_status = getattr(session.response, 'status_code', 200)
                 initial_content = session.html
                 
                 # Quick check for obvious barriers
@@ -748,6 +743,53 @@ class EnhancedFormScraper:
             return action
         else:
             return urljoin(current_url, action)
+    
+    def _find_field_value(self, field: Dict[str, Any], field_data: Dict[str, str]) -> str:
+        """Find field value using multiple matching strategies"""
+        # Try exact matches first
+        for key in [field.get('id'), field.get('name'), field.get('identifier')]:
+            if key and key in field_data:
+                return field_data[key]
+        
+        # Try fuzzy matching
+        field_keys = [k for k in [field.get('id'), field.get('name'), field.get('identifier')] if k]
+        for field_key in field_keys:
+            if field_key:
+                fuzzy_match = self._find_fuzzy_field_match(field_key, field_data.keys())
+                if fuzzy_match:
+                    return field_data[fuzzy_match]
+        
+        return ""
+    
+    def _find_fuzzy_field_match(self, target: str, candidates: List[str]) -> Optional[str]:
+        """Find fuzzy match for field names"""
+        target_lower = target.lower()
+        
+        # Exact match (case insensitive)
+        for candidate in candidates:
+            if candidate.lower() == target_lower:
+                return candidate
+        
+        # Partial match
+        for candidate in candidates:
+            if target_lower in candidate.lower() or candidate.lower() in target_lower:
+                return candidate
+        
+        # Word-based matching
+        target_words = set(re.findall(r'\w+', target_lower))
+        best_match = None
+        best_score = 0
+        
+        for candidate in candidates:
+            candidate_words = set(re.findall(r'\w+', candidate.lower()))
+            common_words = target_words.intersection(candidate_words)
+            if common_words:
+                score = len(common_words) / max(len(target_words), len(candidate_words))
+                if score > best_score and score > 0.5:  # At least 50% match
+                    best_score = score
+                    best_match = candidate
+        
+        return best_match
     
     async def close(self):
         """Clean up resources"""
