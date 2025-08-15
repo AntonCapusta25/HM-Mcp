@@ -1,150 +1,209 @@
 #!/usr/bin/env python3
 """
-Ultra-Robust Form Scraper
-Handles ANY barrier: download screens, login walls, CAPTCHAs, redirects, etc.
+Ultra-Enhanced Form Scraper with DrissionPage
+Handles Cloudflare, CAPTCHAs, login walls, and any other barriers
 """
 
 import asyncio
-import aiohttp
 import time
 import random
 import re
 import logging
-from typing import Dict, List, Any, Optional, Tuple
-from urllib.parse import urljoin, urlparse, parse_qs
-from bs4 import BeautifulSoup
+from typing import Dict, List, Any, Optional, Tuple, Union
+from urllib.parse import urljoin, urlparse
 import json
+from contextlib import asynccontextmanager
+
+# DrissionPage imports
+from DrissionPage import ChromiumPage, ChromiumOptions, SessionPage
+from DrissionPage.common import Actions
+from DrissionPage.errors import ElementNotFoundError, PageDisconnectedError
 
 logger = logging.getLogger(__name__)
 
-class UltraFormScraper:
-    def __init__(self):
-        self.session = None
+class EnhancedFormScraper:
+    def __init__(self, use_stealth: bool = True, headless: bool = True):
+        self.browser_page = None
+        self.session_page = None
+        self.use_stealth = use_stealth
+        self.headless = headless
         self.user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         ]
         
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session with anti-detection headers"""
-        if self.session is None or self.session.closed:
-            connector = aiohttp.TCPConnector(
-                limit=100,
-                ttl_dns_cache=300,
-                use_dns_cache=True,
-            )
-            
-            headers = {
-                'User-Agent': random.choice(self.user_agents),
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0'
-            }
-            
-            self.session = aiohttp.ClientSession(
-                connector=connector,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=30, connect=10)
-            )
-            
-        return self.session
+    def _get_stealth_options(self) -> ChromiumOptions:
+        """Configure stealth browser options for maximum anti-detection"""
+        co = ChromiumOptions()
+        
+        # Basic stealth settings
+        if self.headless:
+            co.headless(True)
+        
+        # Anti-detection arguments
+        co.add_argument('--no-sandbox')
+        co.add_argument('--disable-blink-features=AutomationControlled')
+        co.add_argument('--disable-features=VizDisplayCompositor')
+        co.add_argument('--disable-dev-shm-usage')
+        co.add_argument('--disable-gpu')
+        co.add_argument('--disable-web-security')
+        co.add_argument('--disable-features=site-per-process')
+        co.add_argument('--no-first-run')
+        co.add_argument('--no-service-autorun')
+        co.add_argument('--no-default-browser-check')
+        co.add_argument('--password-store=basic')
+        co.add_argument('--use-mock-keychain')
+        
+        # Randomize user agent
+        user_agent = random.choice(self.user_agents)
+        co.set_user_agent(user_agent)
+        
+        # Randomize window size
+        widths = [1366, 1920, 1440, 1536, 1024]
+        heights = [768, 1080, 900, 864, 768]
+        width = random.choice(widths)
+        height = random.choice(heights)
+        co.set_window_size(width, height)
+        
+        # Set additional preferences for stealth
+        prefs = {
+            'profile.default_content_setting_values.notifications': 2,
+            'profile.default_content_settings.popups': 0,
+            'profile.managed_default_content_settings.images': 2,  # Block images for speed
+            'profile.default_content_setting_values.media_stream': 2,
+        }
+        co.set_pref(prefs)
+        
+        return co
     
-    async def test_url_accessibility(self, url: str) -> Dict[str, Any]:
-        """Test if URL is accessible and detect potential barriers"""
+    async def _get_browser_page(self) -> ChromiumPage:
+        """Get or create browser page with stealth configuration"""
+        if self.browser_page is None or self.browser_page.states.is_alive is False:
+            if self.use_stealth:
+                options = self._get_stealth_options()
+                self.browser_page = ChromiumPage(addr_or_opts=options)
+            else:
+                self.browser_page = ChromiumPage()
+            
+            # Additional stealth JavaScript injections
+            if self.use_stealth:
+                await self._inject_stealth_scripts()
+        
+        return self.browser_page
+    
+    async def _inject_stealth_scripts(self):
+        """Inject JavaScript to enhance stealth capabilities"""
+        stealth_scripts = [
+            # Remove webdriver property
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})",
+            
+            # Fake plugins
+            """
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5].map(() => ({ length: 4 }))
+            });
+            """,
+            
+            # Fake languages
+            "Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']})",
+            
+            # Mock chrome object
+            "window.chrome = { runtime: {} };",
+            
+            # Mock permissions
+            """
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+            """
+        ]
+        
+        for script in stealth_scripts:
+            try:
+                self.browser_page.run_js(script)
+            except Exception as e:
+                logger.debug(f"Failed to inject stealth script: {e}")
+    
+    def _get_session_page(self) -> SessionPage:
+        """Get or create session page for HTTP requests"""
+        if self.session_page is None:
+            self.session_page = SessionPage()
+            # Set random user agent
+            user_agent = random.choice(self.user_agents)
+            self.session_page.set_user_agent(user_agent)
+        
+        return self.session_page
+    
+    async def test_url_accessibility_enhanced(self, url: str) -> Dict[str, Any]:
+        """Enhanced URL accessibility test with Cloudflare detection and bypass"""
         try:
-            session = await self._get_session()
+            # First try with fast HTTP session
+            session = self._get_session_page()
+            try:
+                session.get(url, timeout=10)
+                initial_status = session.response.status_code
+                initial_content = session.html
+                
+                # Quick check for obvious barriers
+                barriers = self._detect_barriers_in_content(initial_content, initial_status)
+                
+                if not barriers or barriers == ['minor_javascript_required']:
+                    return {
+                        'accessible': True,
+                        'status_code': initial_status,
+                        'method_used': 'http_session',
+                        'barriers': barriers,
+                        'success_probability': 0.9,
+                        'recommendations': ['HTTP session access successful']
+                    }
+            except Exception as e:
+                logger.debug(f"HTTP session failed: {e}")
+            
+            # If HTTP fails or barriers detected, try with browser
+            browser = await self._get_browser_page()
             
             start_time = time.time()
+            browser.get(url)
             
-            # First, try HEAD request to check basics
-            try:
-                async with session.head(url, allow_redirects=True) as response:
-                    head_info = {
-                        'status_code': response.status,
-                        'content_type': response.headers.get('content-type', ''),
-                        'final_url': str(response.url),
-                        'redirect_count': len(response.history)
-                    }
-            except:
-                head_info = {}
+            # Wait for page to load and handle any challenges
+            await self._handle_cloudflare_challenges(browser)
             
-            # Then try GET request
-            async with session.get(url, allow_redirects=True) as response:
-                load_time = time.time() - start_time
-                content = await response.text()
-                
-                barriers = []
-                content_lower = content.lower()
-                
-                # Detect various barriers
-                if response.status == 403:
-                    barriers.append("access_forbidden")
-                elif response.status == 404:
-                    barriers.append("page_not_found")
-                elif response.status >= 400:
-                    barriers.append(f"http_error_{response.status}")
-                
-                # Content-based barrier detection
-                if 'captcha' in content_lower or 'recaptcha' in content_lower:
-                    barriers.append("captcha_detected")
-                
-                if any(word in content_lower for word in ['login', 'signin', 'sign in', 'authenticate']):
-                    if 'form' in content_lower and any(word in content_lower for word in ['password', 'username', 'email']):
-                        barriers.append("login_required")
-                
-                if 'download' in url.lower() or any(ext in response.headers.get('content-type', '') for ext in ['pdf', 'zip', 'doc', 'xls']):
-                    barriers.append("download_file")
-                
-                if response.headers.get('content-disposition', '').startswith('attachment'):
-                    barriers.append("forced_download")
-                
-                # Check for forms
-                soup = BeautifulSoup(content, 'html.parser')
-                forms = soup.find_all('form')
-                
-                # Estimate success probability
-                success_probability = 1.0
-                if barriers:
-                    success_probability -= len(barriers) * 0.2
-                if not forms:
-                    success_probability -= 0.3
-                if response.status != 200:
-                    success_probability -= 0.4
-                
-                success_probability = max(0.0, min(1.0, success_probability))
-                
-                recommendations = []
-                if 'captcha_detected' in barriers:
-                    recommendations.append("Page has CAPTCHA - manual intervention may be required")
-                if 'login_required' in barriers:
-                    recommendations.append("Page requires authentication - provide credentials")
-                if 'download_file' in barriers:
-                    recommendations.append("URL points to download - not a form page")
-                if not forms:
-                    recommendations.append("No forms detected - verify this is the correct URL")
-                
-                return {
-                    'accessible': response.status == 200 and len(barriers) == 0,
-                    'status_code': response.status,
-                    'content_type': response.headers.get('content-type', ''),
-                    'final_url': str(response.url),
-                    'redirect_count': len(response.history),
-                    'barriers': barriers,
-                    'success_probability': success_probability,
-                    'recommendations': recommendations,
-                    'load_time': load_time,
-                    'forms_found': len(forms)
-                }
-                
+            load_time = time.time() - start_time
+            current_url = browser.url
+            content = browser.html
+            
+            # Comprehensive barrier detection
+            barriers = self._detect_barriers_in_content(content, 200)
+            success_indicators = self._detect_success_indicators_in_content(content)
+            
+            # Find forms
+            forms = browser.eles('tag:form')
+            
+            # Calculate success probability
+            success_probability = self._calculate_success_probability(
+                barriers, success_indicators, len(forms), load_time
+            )
+            
+            return {
+                'accessible': success_probability > 0.6,
+                'status_code': 200,
+                'method_used': 'browser_automation',
+                'final_url': current_url,
+                'barriers': barriers,
+                'success_indicators': success_indicators,
+                'success_probability': success_probability,
+                'load_time': load_time,
+                'forms_found': len(forms),
+                'recommendations': self._generate_enhanced_recommendations(
+                    barriers, success_indicators, len(forms)
+                )
+            }
+            
         except Exception as e:
             return {
                 'accessible': False,
@@ -154,202 +213,354 @@ class UltraFormScraper:
                 'recommendations': [f"Connection failed: {str(e)}"]
             }
     
-    async def analyze_page_comprehensive(self, url: str) -> Dict[str, Any]:
-        """Comprehensive page analysis including barriers and content"""
+    async def _handle_cloudflare_challenges(self, browser: ChromiumPage, max_wait: int = 30):
+        """Handle Cloudflare challenges automatically"""
+        start_time = time.time()
+        
+        while time.time() - start_time < max_wait:
+            try:
+                current_url = browser.url
+                page_content = browser.html.lower()
+                
+                # Check for Cloudflare challenge indicators
+                cf_indicators = [
+                    'checking your browser',
+                    'cloudflare',
+                    'just a moment',
+                    'please wait',
+                    'ray id',
+                    'challenge-running',
+                    'cf-browser-verification'
+                ]
+                
+                is_cf_challenge = any(indicator in page_content for indicator in cf_indicators)
+                
+                if not is_cf_challenge:
+                    logger.info("No Cloudflare challenge detected or challenge completed")
+                    break
+                
+                logger.info("Cloudflare challenge detected, waiting...")
+                
+                # Look for and click verification checkboxes if present
+                checkbox_selectors = [
+                    'input[type="checkbox"]',
+                    '.cf-turnstile',
+                    '#challenge-form input',
+                    '.challenge-form input[type="checkbox"]'
+                ]
+                
+                for selector in checkbox_selectors:
+                    try:
+                        checkbox = browser.ele(selector, timeout=2)
+                        if checkbox:
+                            logger.info(f"Found checkbox with selector: {selector}")
+                            checkbox.click()
+                            await asyncio.sleep(2)
+                            break
+                    except ElementNotFoundError:
+                        continue
+                
+                # Wait for page changes
+                await asyncio.sleep(3)
+                
+                # Check if URL changed (common after challenge completion)
+                new_url = browser.url
+                if new_url != current_url:
+                    logger.info("URL changed, challenge likely completed")
+                    break
+                    
+            except Exception as e:
+                logger.warning(f"Error handling Cloudflare challenge: {e}")
+                await asyncio.sleep(2)
+        
+        # Final wait for any remaining loading
+        await asyncio.sleep(2)
+    
+    def _detect_barriers_in_content(self, content: str, status_code: int) -> List[str]:
+        """Detect various barriers in page content"""
+        barriers = []
+        content_lower = content.lower()
+        
+        # Status code barriers
+        if status_code == 403:
+            barriers.append("access_forbidden")
+        elif status_code == 404:
+            barriers.append("page_not_found")
+        elif status_code >= 400:
+            barriers.append(f"http_error_{status_code}")
+        
+        # Content-based barriers
+        if any(word in content_lower for word in ['captcha', 'recaptcha', 'hcaptcha', 'turnstile']):
+            barriers.append("captcha_detected")
+        
+        if 'cloudflare' in content_lower and 'checking your browser' in content_lower:
+            barriers.append("cloudflare_challenge")
+        
+        if any(word in content_lower for word in ['login', 'signin', 'sign in', 'authenticate']):
+            if any(word in content_lower for word in ['password', 'username', 'email']):
+                barriers.append("login_required")
+        
+        if 'blocked' in content_lower or 'access denied' in content_lower:
+            barriers.append("access_blocked")
+        
+        if any(word in content_lower for word in ['javascript', 'js']) and 'required' in content_lower:
+            barriers.append("javascript_required")
+        
+        return barriers
+    
+    def _detect_success_indicators_in_content(self, content: str) -> List[str]:
+        """Detect positive indicators in page content"""
+        indicators = []
+        content_lower = content.lower()
+        
+        if '<form' in content_lower:
+            indicators.append("forms_present")
+        
+        if any(word in content_lower for word in ['submit', 'apply', 'contact', 'register']):
+            indicators.append("interactive_elements")
+        
+        if 'input' in content_lower and 'type=' in content_lower:
+            indicators.append("input_fields_present")
+        
+        if len(content) > 10000:  # Substantial content
+            indicators.append("substantial_content")
+        
+        return indicators
+    
+    def _calculate_success_probability(self, barriers: List[str], success_indicators: List[str], 
+                                     form_count: int, load_time: float) -> float:
+        """Calculate probability of successful form interaction"""
+        probability = 0.8  # Base probability
+        
+        # Reduce for barriers
+        barrier_penalties = {
+            'captcha_detected': -0.3,
+            'cloudflare_challenge': -0.1,  # Less penalty since we handle it
+            'login_required': -0.4,
+            'access_blocked': -0.6,
+            'access_forbidden': -0.7,
+            'http_error_404': -0.8,
+            'javascript_required': -0.1
+        }
+        
+        for barrier in barriers:
+            penalty = barrier_penalties.get(barrier, -0.2)
+            probability += penalty
+        
+        # Increase for success indicators
+        for indicator in success_indicators:
+            probability += 0.1
+        
+        # Form bonus
+        if form_count > 0:
+            probability += 0.2
+        else:
+            probability -= 0.3
+        
+        # Load time penalty (too fast might indicate blocking)
+        if load_time < 1:
+            probability -= 0.1
+        elif load_time > 30:
+            probability -= 0.2
+        
+        return max(0.0, min(1.0, probability))
+    
+    def _generate_enhanced_recommendations(self, barriers: List[str], 
+                                         success_indicators: List[str], 
+                                         form_count: int) -> List[str]:
+        """Generate enhanced recommendations"""
+        recommendations = []
+        
+        if form_count == 0:
+            recommendations.append("No forms found - verify URL or wait for dynamic content")
+        
+        if 'captcha_detected' in barriers:
+            recommendations.append("CAPTCHA detected - may require manual intervention or CAPTCHA solver")
+        
+        if 'cloudflare_challenge' in barriers:
+            recommendations.append("Cloudflare challenge detected - using enhanced browser automation")
+        
+        if 'login_required' in barriers:
+            recommendations.append("Login required - provide authentication credentials")
+        
+        if 'access_blocked' in barriers:
+            recommendations.append("Access blocked - consider using different IP or proxy")
+        
+        if len(success_indicators) > 2 and form_count > 0:
+            recommendations.append("Page looks excellent for automation - proceed with confidence")
+        
+        return recommendations
+    
+    async def analyze_page_comprehensive_enhanced(self, url: str) -> Dict[str, Any]:
+        """Enhanced comprehensive page analysis with smart mode switching"""
         try:
-            session = await self._get_session()
+            # Start with accessibility test
+            access_result = await self.test_url_accessibility_enhanced(url)
             
-            async with session.get(url, allow_redirects=True) as response:
-                if response.status not in [200, 201]:
-                    return {
-                        'error': f"HTTP {response.status}: Cannot access page",
-                        'status_code': response.status,
-                        'accessible': False
-                    }
-                
-                content = await response.text()
-                soup = BeautifulSoup(content, 'html.parser')
-                
-                # Basic page info
-                title = soup.find('title')
-                title_text = title.get_text().strip() if title else 'No title'
-                
-                # Find all forms
-                forms = soup.find_all('form')
-                
-                # Detect barriers and issues
-                barriers = []
-                warnings = []
-                content_lower = content.lower()
-                
-                # CAPTCHA detection
-                if any(word in content_lower for word in ['captcha', 'recaptcha', 'hcaptcha']):
-                    barriers.append("captcha_protection")
-                
-                # Login requirement
-                if 'login' in content_lower and soup.find('input', {'type': 'password'}):
-                    barriers.append("authentication_required")
-                
-                # JavaScript dependency
-                script_tags = soup.find_all('script')
-                if len(script_tags) > 10:  # Heavy JS usage
-                    warnings.append("heavy_javascript_usage")
-                
-                # Download detection
-                content_type = response.headers.get('content-type', '')
-                if any(file_type in content_type for file_type in ['pdf', 'zip', 'doc', 'excel']):
-                    return {
-                        'error': f"URL returns {content_type}, not an HTML form",
-                        'page_type': 'download',
-                        'accessible': False
-                    }
-                
-                # Dynamic content warnings
-                if 'loading' in content_lower or 'please wait' in content_lower:
-                    warnings.append("dynamic_content_loading")
-                
-                # Form analysis
-                form_analysis = []
-                for i, form in enumerate(forms):
-                    fields = form.find_all(['input', 'textarea', 'select'])
-                    form_info = {
-                        'index': i,
-                        'action': form.get('action', ''),
-                        'method': form.get('method', 'GET').upper(),
-                        'field_count': len(fields),
-                        'has_file_upload': bool(form.find('input', {'type': 'file'})),
-                        'requires_validation': bool(form.find('input', {'required': True}))
-                    }
-                    form_analysis.append(form_info)
-                
-                # Determine page type
-                page_type = 'unknown'
-                if forms:
-                    if any('job' in content_lower for word in ['job', 'career', 'application', 'apply']):
-                        page_type = 'job_application'
-                    elif 'contact' in content_lower:
-                        page_type = 'contact_form'
-                    elif 'signup' in content_lower or 'register' in content_lower:
-                        page_type = 'registration'
-                    else:
-                        page_type = 'general_form'
-                else:
-                    page_type = 'no_forms'
-                
-                # Barriers bypassed
-                barriers_bypassed = []
-                if response.status == 200:
-                    barriers_bypassed.append("http_access_successful")
-                if len(response.history) > 0:
-                    barriers_bypassed.append(f"followed_{len(response.history)}_redirects")
-                
+            if not access_result.get('accessible', False):
                 return {
-                    'success': True,
-                    'title': title_text,
-                    'url': str(response.url),
-                    'status_code': response.status,
-                    'forms_count': len(forms),
-                    'forms_analysis': form_analysis,
-                    'barriers': barriers,
-                    'barriers_bypassed': barriers_bypassed,
-                    'warnings': warnings,
-                    'page_type': page_type,
-                    'accessible': len(barriers) == 0,
-                    'recommendations': self._generate_recommendations(barriers, warnings, len(forms))
+                    'success': False,
+                    'error': f"Page not accessible: {access_result.get('error', 'Unknown error')}",
+                    'accessibility': access_result
                 }
+            
+            # Use the method that worked for accessibility test
+            method_used = access_result.get('method_used', 'browser_automation')
+            
+            if method_used == 'http_session':
+                # Try session first for speed
+                try:
+                    return await self._analyze_with_session(url, access_result)
+                except:
+                    # Fall back to browser
+                    return await self._analyze_with_browser(url, access_result)
+            else:
+                # Use browser directly
+                return await self._analyze_with_browser(url, access_result)
                 
         except Exception as e:
             logger.error(f"Error analyzing page {url}: {str(e)}")
             return {
-                'error': f"Analysis failed: {str(e)}",
-                'accessible': False
+                'success': False,
+                'error': f"Analysis failed: {str(e)}"
             }
     
-    def _generate_recommendations(self, barriers: List[str], warnings: List[str], form_count: int) -> List[str]:
-        """Generate actionable recommendations based on analysis"""
-        recommendations = []
+    async def _analyze_with_session(self, url: str, access_result: Dict) -> Dict[str, Any]:
+        """Analyze page using HTTP session for speed"""
+        session = self._get_session_page()
+        session.get(url)
+        
+        # Extract basic information
+        title_ele = session.ele('tag:title')
+        title = title_ele.text if title_ele else 'No title'
+        
+        forms = session.eles('tag:form')
+        
+        return {
+            'success': True,
+            'method_used': 'http_session',
+            'title': title,
+            'url': session.url,
+            'forms_count': len(forms),
+            'forms_analysis': [self._analyze_form_basic(form, i) for i, form in enumerate(forms)],
+            'accessibility': access_result,
+            'page_type': self._determine_page_type(session.html, len(forms)),
+            'recommendations': ['Fast HTTP session analysis completed successfully']
+        }
+    
+    async def _analyze_with_browser(self, url: str, access_result: Dict) -> Dict[str, Any]:
+        """Analyze page using browser automation for complex cases"""
+        browser = await self._get_browser_page()
+        
+        if browser.url != url:
+            browser.get(url)
+            await self._handle_cloudflare_challenges(browser)
+        
+        # Extract comprehensive information
+        title_ele = browser.ele('tag:title', timeout=5)
+        title = title_ele.text if title_ele else 'No title'
+        
+        forms = browser.eles('tag:form')
+        
+        # Check for dynamic content
+        await asyncio.sleep(2)  # Wait for any dynamic loading
+        forms_after_wait = browser.eles('tag:form')
+        
+        if len(forms_after_wait) > len(forms):
+            forms = forms_after_wait
+            logger.info(f"Found {len(forms_after_wait) - len(forms)} additional forms after waiting")
+        
+        return {
+            'success': True,
+            'method_used': 'browser_automation',
+            'title': title,
+            'url': browser.url,
+            'forms_count': len(forms),
+            'forms_analysis': [self._analyze_form_comprehensive(form, i) for i, form in enumerate(forms)],
+            'accessibility': access_result,
+            'page_type': self._determine_page_type(browser.html, len(forms)),
+            'dynamic_content_detected': len(forms_after_wait) > len(forms),
+            'recommendations': ['Comprehensive browser analysis completed successfully']
+        }
+    
+    def _analyze_form_basic(self, form, index: int) -> Dict[str, Any]:
+        """Basic form analysis for session mode"""
+        action = form.attr('action') or ''
+        method = form.attr('method') or 'GET'
+        
+        fields = form.eles('tag:input, tag:textarea, tag:select')
+        
+        return {
+            'index': index,
+            'action': action,
+            'method': method.upper(),
+            'field_count': len(fields),
+            'has_file_upload': bool(form.ele('css:input[type="file"]')),
+            'has_required_fields': bool(form.ele('css:input[required], textarea[required], select[required]'))
+        }
+    
+    def _analyze_form_comprehensive(self, form, index: int) -> Dict[str, Any]:
+        """Comprehensive form analysis for browser mode"""
+        basic_info = self._analyze_form_basic(form, index)
+        
+        # Additional browser-specific analysis
+        submit_buttons = form.eles('tag:input[type="submit"], tag:button[type="submit"], tag:button')
+        
+        # Check for JavaScript form handling
+        form_attrs = form.attrs
+        has_js_handling = any(attr.startswith('on') for attr in form_attrs.keys())
+        
+        basic_info.update({
+            'submit_buttons': len(submit_buttons),
+            'has_javascript_handling': has_js_handling,
+            'form_id': form.attr('id') or '',
+            'form_class': form.attr('class') or ''
+        })
+        
+        return basic_info
+    
+    def _determine_page_type(self, html_content: str, form_count: int) -> str:
+        """Determine the type of page based on content"""
+        content_lower = html_content.lower()
         
         if form_count == 0:
-            recommendations.append("No forms found - verify this is the correct page URL")
+            return 'no_forms'
         
-        if 'captcha_protection' in barriers:
-            recommendations.append("CAPTCHA detected - automated submission may fail")
+        # Job application patterns
+        if any(word in content_lower for word in ['job', 'career', 'position', 'application', 'apply now', 'resume']):
+            return 'job_application'
         
-        if 'authentication_required' in barriers:
-            recommendations.append("Page requires login - provide authentication credentials")
+        # Contact form patterns
+        if any(word in content_lower for word in ['contact', 'message', 'inquiry', 'get in touch']):
+            return 'contact_form'
         
-        if 'heavy_javascript_usage' in warnings:
-            recommendations.append("Page uses heavy JavaScript - may need browser automation")
+        # Registration patterns
+        if any(word in content_lower for word in ['register', 'sign up', 'create account', 'join']):
+            return 'registration'
         
-        if 'dynamic_content_loading' in warnings:
-            recommendations.append("Content loads dynamically - may need delay before scraping")
+        # Login patterns
+        if any(word in content_lower for word in ['login', 'sign in', 'authenticate']):
+            return 'login'
         
-        if not barriers and not warnings and form_count > 0:
-            recommendations.append("Page looks good for automation - proceed with form filling")
-        
-        return recommendations
+        return 'general_form'
     
-    async def extract_form_fields_ultra(self, url: str, form_index: int = 0) -> Dict[str, Any]:
-        """Extract form fields with maximum detail and intelligence"""
+    async def extract_form_fields_enhanced(self, url: str, form_index: int = 0) -> Dict[str, Any]:
+        """Enhanced form field extraction with intelligent handling"""
         try:
-            session = await self._get_session()
+            # First determine the best method to use
+            access_result = await self.test_url_accessibility_enhanced(url)
+            method = access_result.get('method_used', 'browser_automation')
             
-            async with session.get(url, allow_redirects=True) as response:
-                if response.status not in [200, 201]:
-                    return {
-                        'success': False,
-                        'error': f"Cannot access page: HTTP {response.status}"
-                    }
-                
-                content = await response.text()
-                soup = BeautifulSoup(content, 'html.parser')
-                
-                forms = soup.find_all('form')
-                if not forms:
-                    return {
-                        'success': False,
-                        'error': "No forms found on page"
-                    }
-                
-                if form_index >= len(forms):
-                    return {
-                        'success': False,
-                        'error': f"Form index {form_index} not found. Page has {len(forms)} forms."
-                    }
-                
-                form = forms[form_index]
-                
-                # Extract form metadata
-                form_action = form.get('action', '')
-                if form_action and not form_action.startswith('http'):
-                    form_action = urljoin(url, form_action)
-                
-                form_method = form.get('method', 'GET').upper()
-                form_enctype = form.get('enctype', 'application/x-www-form-urlencoded')
-                
-                # Extract all form fields
-                fields = []
-                field_elements = form.find_all(['input', 'textarea', 'select'])
-                
-                for element in field_elements:
-                    field_data = self._extract_field_details(element, soup)
-                    if field_data:  # Only add valid fields
-                        fields.append(field_data)
-                
-                # Find submit button info
-                submit_info = self._find_submit_info(form)
-                
-                return {
-                    'success': True,
-                    'fields': fields,
-                    'field_count': len(fields),
-                    'form_action': form_action or url,
-                    'form_method': form_method,
-                    'form_enctype': form_enctype,
-                    'submit_info': submit_info,
-                    'form_index': form_index
-                }
-                
+            if method == 'http_session' and access_result.get('success_probability', 0) > 0.8:
+                # Try session first for speed
+                try:
+                    return await self._extract_fields_with_session(url, form_index)
+                except Exception as e:
+                    logger.info(f"Session extraction failed, falling back to browser: {e}")
+            
+            # Use browser for complex cases
+            return await self._extract_fields_with_browser(url, form_index)
+            
         except Exception as e:
             logger.error(f"Error extracting form fields from {url}: {str(e)}")
             return {
@@ -357,194 +568,209 @@ class UltraFormScraper:
                 'error': f"Field extraction failed: {str(e)}"
             }
     
-    def _extract_field_details(self, element, soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
-        """Extract detailed information about a form field"""
-        tag_name = element.name.lower()
-        field_type = element.get('type', 'text').lower()
+    async def _extract_fields_with_session(self, url: str, form_index: int) -> Dict[str, Any]:
+        """Extract form fields using HTTP session"""
+        session = self._get_session_page()
+        session.get(url)
         
-        # Skip certain field types
-        if field_type in ['hidden', 'submit', 'button', 'image', 'reset']:
-            return None
+        forms = session.eles('tag:form')
+        if not forms:
+            return {'success': False, 'error': 'No forms found on page'}
         
-        # Basic field info
-        field_data = {
-            'tag': tag_name,
-            'type': field_type,
-            'name': element.get('name', ''),
-            'identifier': element.get('id') or element.get('name', ''),
-            'value': element.get('value', ''),
-            'placeholder': element.get('placeholder', ''),
-            'required': element.has_attr('required'),
-            'disabled': element.has_attr('disabled'),
-            'readonly': element.has_attr('readonly')
+        if form_index >= len(forms):
+            return {'success': False, 'error': f'Form index {form_index} not found. Page has {len(forms)} forms.'}
+        
+        form = forms[form_index]
+        
+        return {
+            'success': True,
+            'method_used': 'http_session',
+            'fields': self._extract_field_details_from_element(form, session),
+            'form_action': self._get_form_action(form, url),
+            'form_method': (form.attr('method') or 'GET').upper(),
+            'form_enctype': form.attr('enctype') or 'application/x-www-form-urlencoded',
+            'form_index': form_index
         }
-        
-        # Find label
-        label = self._find_field_label(element, soup)
-        field_data['label'] = label
-        
-        # Field-specific attributes
-        if tag_name == 'input':
-            field_data.update({
-                'max_length': element.get('maxlength'),
-                'min_length': element.get('minlength'),
-                'pattern': element.get('pattern'),
-                'accept': element.get('accept'),  # for file inputs
-                'multiple': element.has_attr('multiple')
-            })
-        
-        elif tag_name == 'textarea':
-            field_data.update({
-                'rows': element.get('rows'),
-                'cols': element.get('cols'),
-                'max_length': element.get('maxlength'),
-                'wrap': element.get('wrap')
-            })
-        
-        elif tag_name == 'select':
-            options = []
-            option_elements = element.find_all('option')
-            for option in option_elements:
-                option_data = {
-                    'value': option.get('value', option.get_text().strip()),
-                    'text': option.get_text().strip(),
-                    'selected': option.has_attr('selected')
-                }
-                options.append(option_data)
-            
-            field_data.update({
-                'options': options,
-                'multiple': element.has_attr('multiple'),
-                'size': element.get('size')
-            })
-        
-        # Additional context from surrounding elements
-        field_data['description'] = self._find_field_description(element, soup)
-        field_data['validation_rules'] = self._extract_validation_rules(element)
-        
-        return field_data
     
-    def _find_field_label(self, element, soup: BeautifulSoup) -> str:
-        """Find the label text for a form field"""
-        # Try label tag first
-        field_id = element.get('id')
-        if field_id:
-            label = soup.find('label', {'for': field_id})
-            if label:
-                return label.get_text().strip()
+    async def _extract_fields_with_browser(self, url: str, form_index: int) -> Dict[str, Any]:
+        """Extract form fields using browser automation"""
+        browser = await self._get_browser_page()
+        browser.get(url)
+        await self._handle_cloudflare_challenges(browser)
         
-        # Try parent label
-        parent_label = element.find_parent('label')
-        if parent_label:
-            text = parent_label.get_text().strip()
-            # Remove the input's own value from label text
-            if element.get('value'):
-                text = text.replace(element.get('value'), '').strip()
-            return text
+        # Wait for dynamic content
+        await asyncio.sleep(2)
+        
+        forms = browser.eles('tag:form')
+        if not forms:
+            return {'success': False, 'error': 'No forms found on page'}
+        
+        if form_index >= len(forms):
+            return {'success': False, 'error': f'Form index {form_index} not found. Page has {len(forms)} forms.'}
+        
+        form = forms[form_index]
+        
+        return {
+            'success': True,
+            'method_used': 'browser_automation',
+            'fields': self._extract_field_details_from_element(form, browser),
+            'form_action': self._get_form_action(form, browser.url),
+            'form_method': (form.attr('method') or 'GET').upper(),
+            'form_enctype': form.attr('enctype') or 'application/x-www-form-urlencoded',
+            'form_index': form_index
+        }
+    
+    def _extract_field_details_from_element(self, form, page) -> List[Dict[str, Any]]:
+        """Extract detailed field information from form element"""
+        fields = []
+        field_elements = form.eles('tag:input, tag:textarea, tag:select')
+        
+        for element in field_elements:
+            field_type = element.attr('type') or 'text'
+            
+            # Skip non-input fields
+            if field_type.lower() in ['hidden', 'submit', 'button', 'image', 'reset']:
+                continue
+            
+            field_data = {
+                'tag': element.tag,
+                'type': field_type,
+                'name': element.attr('name') or '',
+                'id': element.attr('id') or '',
+                'identifier': element.attr('id') or element.attr('name') or '',
+                'value': element.attr('value') or '',
+                'placeholder': element.attr('placeholder') or '',
+                'required': element.attr('required') is not None,
+                'disabled': element.attr('disabled') is not None,
+                'readonly': element.attr('readonly') is not None
+            }
+            
+            # Find label
+            field_data['label'] = self._find_field_label(element, page)
+            
+            # Add field-specific attributes
+            if element.tag == 'select':
+                options = []
+                option_elements = element.eles('tag:option')
+                for option in option_elements:
+                    options.append({
+                        'value': option.attr('value') or option.text,
+                        'text': option.text,
+                        'selected': option.attr('selected') is not None
+                    })
+                field_data['options'] = options
+            
+            # Validation rules
+            field_data['validation_rules'] = self._extract_validation_rules(element)
+            
+            fields.append(field_data)
+        
+        return fields
+    
+    def _find_field_label(self, element, page) -> str:
+        """Find label for a form field"""
+        # Try label tag first
+        field_id = element.attr('id')
+        if field_id:
+            label = page.ele(f'css:label[for="{field_id}"]', timeout=1)
+            if label:
+                return label.text.strip()
         
         # Try aria-label
-        aria_label = element.get('aria-label')
+        aria_label = element.attr('aria-label')
         if aria_label:
             return aria_label.strip()
         
-        # Try title attribute
-        title = element.get('title')
-        if title:
-            return title.strip()
-        
-        # Try placeholder as last resort
-        placeholder = element.get('placeholder')
+        # Try placeholder
+        placeholder = element.attr('placeholder')
         if placeholder:
             return placeholder.strip()
         
-        # Try to find nearby text
-        prev_element = element.find_previous_sibling()
-        if prev_element and prev_element.name in ['span', 'div', 'p', 'strong', 'b']:
-            text = prev_element.get_text().strip()
-            if len(text) < 100:  # Reasonable label length
-                return text
+        # Try name attribute
+        name = element.attr('name')
+        if name:
+            return name.replace('_', ' ').replace('-', ' ').title()
         
-        return element.get('name', 'Unnamed field')
-    
-    def _find_field_description(self, element, soup: BeautifulSoup) -> str:
-        """Find description or help text for a field"""
-        # Try aria-describedby
-        described_by = element.get('aria-describedby')
-        if described_by:
-            desc_element = soup.find(attrs={'id': described_by})
-            if desc_element:
-                return desc_element.get_text().strip()
-        
-        # Look for nearby help text
-        field_id = element.get('id')
-        if field_id:
-            # Common patterns for help text
-            help_element = soup.find(attrs={'class': re.compile(r'help|hint|description', re.I)})
-            if help_element:
-                return help_element.get_text().strip()
-        
-        return ''
+        return 'Unnamed field'
     
     def _extract_validation_rules(self, element) -> List[str]:
-        """Extract validation rules from field attributes"""
+        """Extract validation rules from element attributes"""
         rules = []
         
-        if element.has_attr('required'):
+        if element.attr('required'):
             rules.append('required')
         
-        if element.get('type') == 'email':
+        field_type = element.attr('type', '').lower()
+        if field_type == 'email':
             rules.append('email_format')
-        
-        if element.get('type') == 'url':
+        elif field_type == 'url':
             rules.append('url_format')
+        elif field_type == 'tel':
+            rules.append('phone_format')
         
-        if element.get('pattern'):
-            rules.append(f"pattern: {element.get('pattern')}")
+        pattern = element.attr('pattern')
+        if pattern:
+            rules.append(f'pattern: {pattern}')
         
-        min_length = element.get('minlength')
+        min_length = element.attr('minlength')
         if min_length:
-            rules.append(f"min_length: {min_length}")
+            rules.append(f'min_length: {min_length}')
         
-        max_length = element.get('maxlength')
+        max_length = element.attr('maxlength')
         if max_length:
-            rules.append(f"max_length: {max_length}")
+            rules.append(f'max_length: {max_length}')
         
         return rules
     
-    def _find_submit_info(self, form) -> Dict[str, Any]:
-        """Find submit button information"""
-        # Look for submit buttons
-        submit_buttons = form.find_all(['input', 'button'], {'type': 'submit'})
-        submit_buttons.extend(form.find_all('button', type=lambda x: x != 'button'))
-        
-        if submit_buttons:
-            button = submit_buttons[0]  # Use first submit button
-            return {
-                'type': 'button',
-                'tag': button.name,
-                'identifier': button.get('id') or button.get('name'),
-                'value': button.get('value') or button.get_text().strip(),
-                'text': button.get_text().strip()
-            }
-        
-        # Look for any button that might submit
-        buttons = form.find_all('button')
-        for button in buttons:
-            button_text = button.get_text().lower()
-            if any(word in button_text for word in ['submit', 'send', 'apply', 'save', 'continue']):
-                return {
-                    'type': 'button',
-                    'tag': button.name,
-                    'identifier': button.get('id') or button.get('name'),
-                    'text': button.get_text().strip()
-                }
-        
-        return {
-            'type': 'form',
-            'method': 'submit_form_directly'
-        }
+    def _get_form_action(self, form, current_url: str) -> str:
+        """Get form action URL"""
+        action = form.attr('action') or ''
+        if not action:
+            return current_url
+        elif action.startswith('http'):
+            return action
+        else:
+            return urljoin(current_url, action)
     
     async def close(self):
         """Clean up resources"""
-        if self.session and not self.session.closed:
-            await self.session.close()
+        if self.browser_page:
+            try:
+                self.browser_page.quit()
+            except:
+                pass
+        
+        if self.session_page:
+            try:
+                self.session_page.close()
+            except:
+                pass
+
+# Example usage and testing
+async def test_enhanced_scraper():
+    """Test the enhanced form scraper"""
+    scraper = EnhancedFormScraper(use_stealth=True, headless=False)  # headless=False for testing
+    
+    try:
+        # Test with a challenging site
+        test_url = "https://nopecha.com/demo/cloudflare"
+        
+        print("Testing URL accessibility...")
+        access_result = await scraper.test_url_accessibility_enhanced(test_url)
+        print(f"Access result: {access_result}")
+        
+        if access_result.get('accessible'):
+            print("\nAnalyzing page...")
+            analysis_result = await scraper.analyze_page_comprehensive_enhanced(test_url)
+            print(f"Analysis result: {analysis_result}")
+            
+            if analysis_result.get('success') and analysis_result.get('forms_count', 0) > 0:
+                print("\nExtracting form fields...")
+                fields_result = await scraper.extract_form_fields_enhanced(test_url)
+                print(f"Fields result: {fields_result}")
+    
+    finally:
+        await scraper.close()
+
+if __name__ == "__main__":
+    asyncio.run(test_enhanced_scraper())
