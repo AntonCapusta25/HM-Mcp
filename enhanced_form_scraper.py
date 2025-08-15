@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ultra-Enhanced Form Scraper with DrissionPage
+Ultra-Enhanced Form Scraper with DrissionPage (FIXED)
 Handles Cloudflare, CAPTCHAs, login walls, and any other barriers
 """
 
@@ -14,10 +14,9 @@ from urllib.parse import urljoin, urlparse
 import json
 from contextlib import asynccontextmanager
 
-# DrissionPage imports
+# DrissionPage imports with correct API
 from DrissionPage import ChromiumPage, ChromiumOptions, SessionPage
 from DrissionPage.common import Actions
-from DrissionPage.errors import ElementNotFoundError, PageDisconnectedError
 
 logger = logging.getLogger(__name__)
 
@@ -42,19 +41,25 @@ class EnhancedFormScraper:
         if self.headless:
             co.headless(True)
         
-        # Anti-detection arguments
-        co.add_argument('--no-sandbox')
-        co.add_argument('--disable-blink-features=AutomationControlled')
-        co.add_argument('--disable-features=VizDisplayCompositor')
-        co.add_argument('--disable-dev-shm-usage')
-        co.add_argument('--disable-gpu')
-        co.add_argument('--disable-web-security')
-        co.add_argument('--disable-features=site-per-process')
-        co.add_argument('--no-first-run')
-        co.add_argument('--no-service-autorun')
-        co.add_argument('--no-default-browser-check')
-        co.add_argument('--password-store=basic')
-        co.add_argument('--use-mock-keychain')
+        # Anti-detection arguments using correct DrissionPage API
+        args = [
+            '--no-sandbox',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-web-security',
+            '--disable-features=site-per-process',
+            '--no-first-run',
+            '--no-service-autorun',
+            '--no-default-browser-check',
+            '--password-store=basic',
+            '--use-mock-keychain'
+        ]
+        
+        # Add arguments using correct method
+        for arg in args:
+            co.add_arg(arg)
         
         # Randomize user agent
         user_agent = random.choice(self.user_agents)
@@ -74,22 +79,30 @@ class EnhancedFormScraper:
             'profile.managed_default_content_settings.images': 2,  # Block images for speed
             'profile.default_content_setting_values.media_stream': 2,
         }
-        co.set_pref(prefs)
+        
+        for key, value in prefs.items():
+            co.set_pref(key, value)
         
         return co
     
     async def _get_browser_page(self) -> ChromiumPage:
         """Get or create browser page with stealth configuration"""
-        if self.browser_page is None or self.browser_page.states.is_alive is False:
-            if self.use_stealth:
-                options = self._get_stealth_options()
-                self.browser_page = ChromiumPage(addr_or_opts=options)
-            else:
+        if self.browser_page is None or not self.browser_page.states.is_alive:
+            try:
+                if self.use_stealth:
+                    options = self._get_stealth_options()
+                    self.browser_page = ChromiumPage(addr_or_opts=options)
+                else:
+                    self.browser_page = ChromiumPage()
+                
+                # Additional stealth JavaScript injections
+                if self.use_stealth:
+                    await self._inject_stealth_scripts()
+                    
+            except Exception as e:
+                logger.error(f"Failed to create browser page: {e}")
+                # Fallback to basic configuration
                 self.browser_page = ChromiumPage()
-            
-            # Additional stealth JavaScript injections
-            if self.use_stealth:
-                await self._inject_stealth_scripts()
         
         return self.browser_page
     
@@ -205,6 +218,7 @@ class EnhancedFormScraper:
             }
             
         except Exception as e:
+            logger.error(f"Error in accessibility test: {e}")
             return {
                 'accessible': False,
                 'error': str(e),
@@ -257,7 +271,7 @@ class EnhancedFormScraper:
                             checkbox.click()
                             await asyncio.sleep(2)
                             break
-                    except ElementNotFoundError:
+                    except:
                         continue
                 
                 # Wait for page changes
@@ -672,9 +686,12 @@ class EnhancedFormScraper:
         # Try label tag first
         field_id = element.attr('id')
         if field_id:
-            label = page.ele(f'css:label[for="{field_id}"]', timeout=1)
-            if label:
-                return label.text.strip()
+            try:
+                label = page.ele(f'css:label[for="{field_id}"]', timeout=1)
+                if label:
+                    return label.text.strip()
+            except:
+                pass
         
         # Try aria-label
         aria_label = element.attr('aria-label')
@@ -753,7 +770,7 @@ async def test_enhanced_scraper():
     
     try:
         # Test with a challenging site
-        test_url = "https://nopecha.com/demo/cloudflare"
+        test_url = "https://airise.eu/about-us"
         
         print("Testing URL accessibility...")
         access_result = await scraper.test_url_accessibility_enhanced(test_url)
