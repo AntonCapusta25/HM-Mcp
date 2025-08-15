@@ -1,115 +1,105 @@
 #!/usr/bin/env python3
 """
-Ultra-Robust Form Submitter
-Handles form submission with maximum reliability and barrier bypass
+Ultra-Enhanced Form Submitter with DrissionPage
+Handles form submission with superior Cloudflare bypass and reliability
 """
 
 import asyncio
-import aiohttp
 import time
 import logging
+import random
 from typing import Dict, List, Any, Optional
-from urllib.parse import urljoin, urlparse, parse_qs
-from bs4 import BeautifulSoup
-import json
+from urllib.parse import urljoin, urlparse
 import re
+
+# DrissionPage imports
+from DrissionPage import ChromiumPage, SessionPage
+from DrissionPage.common import Actions
+from DrissionPage.errors import ElementNotFoundError, PageDisconnectedError
+
+from enhanced_form_scraper import EnhancedFormScraper
 
 logger = logging.getLogger(__name__)
 
-class UltraFormSubmitter:
-    def __init__(self):
-        self.session = None
+class EnhancedFormSubmitter:
+    def __init__(self, use_stealth: bool = True, headless: bool = True):
+        self.scraper = EnhancedFormScraper(use_stealth=use_stealth, headless=headless)
+        self.browser_page = None
+        self.session_page = None
+        self.submission_history = []
         
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session with persistent cookies"""
-        if self.session is None or self.session.closed:
-            # Create session with cookie jar for maintaining state
-            jar = aiohttp.CookieJar(unsafe=True)
-            connector = aiohttp.TCPConnector(
-                limit=100,
-                ttl_dns_cache=300,
-                use_dns_cache=True,
-            )
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'same-origin',
-                'Cache-Control': 'max-age=0'
-            }
-            
-            self.session = aiohttp.ClientSession(
-                connector=connector,
-                headers=headers,
-                cookie_jar=jar,
-                timeout=aiohttp.ClientTimeout(total=30, connect=10)
-            )
-            
-        return self.session
-    
-    async def validate_submission(self, url: str, field_data: Dict[str, str], form_index: int = 0) -> Dict[str, Any]:
-        """Validate form data before submission"""
+    async def validate_submission_enhanced(self, url: str, field_data: Dict[str, str], 
+                                         form_index: int = 0) -> Dict[str, Any]:
+        """Enhanced validation with intelligent field matching"""
         try:
-            from form_scraper import UltraFormScraper
-            scraper = UltraFormScraper()
-            
-            # Get form structure
-            form_result = await scraper.extract_form_fields_ultra(url, form_index)
+            # Get form structure using enhanced scraper
+            form_result = await self.scraper.extract_form_fields_enhanced(url, form_index)
             
             if not form_result.get('success'):
                 return {
                     'valid': False,
-                    'issues': [f"Cannot validate: {form_result.get('error')}"]
+                    'issues': [f"Cannot validate: {form_result.get('error')}"],
+                    'method_used': form_result.get('method_used', 'unknown')
                 }
             
             fields = form_result.get('fields', [])
             issues = []
             warnings = []
+            suggestions = []
             
-            # Check required fields
+            # Create field lookup maps
+            fields_by_name = {f.get('name'): f for f in fields if f.get('name')}
+            fields_by_id = {f.get('id'): f for f in fields if f.get('id')}
+            fields_by_identifier = {f.get('identifier'): f for f in fields if f.get('identifier')}
+            
+            # Check each form field
             for field in fields:
-                field_id = field.get('identifier')
+                field_id = field.get('identifier') or field.get('id') or field.get('name')
                 field_name = field.get('name')
                 field_label = field.get('label', field_id)
+                field_type = field.get('type', '')
                 
-                # Check if required field is provided
+                # Find provided value using multiple strategies
+                provided_value = self._find_field_value(field, field_data)
+                
+                # Validate required fields
                 if field.get('required', False):
-                    if field_id not in field_data and field_name not in field_data:
-                        issues.append(f"Required field missing: {field_label}")
-                    elif not (field_data.get(field_id, '').strip() or field_data.get(field_name, '').strip()):
-                        issues.append(f"Required field empty: {field_label}")
+                    if not provided_value or not provided_value.strip():
+                        issues.append(f"Required field missing or empty: {field_label}")
+                        suggestions.append(f"Provide value for field: {field_id or field_name}")
                 
-                # Validate field format
-                field_value = field_data.get(field_id) or field_data.get(field_name, '')
-                if field_value:
-                    field_issues = self._validate_field_value(field, field_value)
+                # Validate field values if provided
+                if provided_value:
+                    field_issues = self._validate_field_value_enhanced(field, provided_value)
                     issues.extend(field_issues)
             
-            # Check for unknown fields
-            known_fields = set()
+            # Check for unknown provided fields
+            known_field_keys = set()
             for field in fields:
-                if field.get('identifier'):
-                    known_fields.add(field.get('identifier'))
                 if field.get('name'):
-                    known_fields.add(field.get('name'))
+                    known_field_keys.add(field.get('name'))
+                if field.get('id'):
+                    known_field_keys.add(field.get('id'))
+                if field.get('identifier'):
+                    known_field_keys.add(field.get('identifier'))
             
-            for provided_field in field_data.keys():
-                if provided_field not in known_fields:
-                    warnings.append(f"Unknown field provided: {provided_field}")
+            for provided_key in field_data.keys():
+                if provided_key not in known_field_keys:
+                    # Try fuzzy matching
+                    best_match = self._find_fuzzy_field_match(provided_key, known_field_keys)
+                    if best_match:
+                        suggestions.append(f"Unknown field '{provided_key}' - did you mean '{best_match}'?")
+                    else:
+                        warnings.append(f"Unknown field provided: {provided_key}")
             
             return {
                 'valid': len(issues) == 0,
                 'issues': issues,
                 'warnings': warnings,
+                'suggestions': suggestions,
                 'fields_checked': len(fields),
-                'data_provided': len(field_data)
+                'data_provided': len(field_data),
+                'method_used': form_result.get('method_used', 'unknown')
             }
             
         except Exception as e:
@@ -118,14 +108,61 @@ class UltraFormSubmitter:
                 'issues': [f"Validation error: {str(e)}"]
             }
     
-    def _validate_field_value(self, field: Dict[str, Any], value: str) -> List[str]:
-        """Validate a single field value against its constraints"""
+    def _find_field_value(self, field: Dict[str, Any], field_data: Dict[str, str]) -> str:
+        """Find field value using multiple matching strategies"""
+        # Try exact matches first
+        for key in [field.get('id'), field.get('name'), field.get('identifier')]:
+            if key and key in field_data:
+                return field_data[key]
+        
+        # Try fuzzy matching
+        field_keys = [k for k in [field.get('id'), field.get('name'), field.get('identifier')] if k]
+        for field_key in field_keys:
+            if field_key:
+                fuzzy_match = self._find_fuzzy_field_match(field_key, field_data.keys())
+                if fuzzy_match:
+                    return field_data[fuzzy_match]
+        
+        return ""
+    
+    def _find_fuzzy_field_match(self, target: str, candidates: List[str]) -> Optional[str]:
+        """Find fuzzy match for field names"""
+        target_lower = target.lower()
+        
+        # Exact match (case insensitive)
+        for candidate in candidates:
+            if candidate.lower() == target_lower:
+                return candidate
+        
+        # Partial match
+        for candidate in candidates:
+            if target_lower in candidate.lower() or candidate.lower() in target_lower:
+                return candidate
+        
+        # Word-based matching
+        target_words = set(re.findall(r'\w+', target_lower))
+        best_match = None
+        best_score = 0
+        
+        for candidate in candidates:
+            candidate_words = set(re.findall(r'\w+', candidate.lower()))
+            common_words = target_words.intersection(candidate_words)
+            if common_words:
+                score = len(common_words) / max(len(target_words), len(candidate_words))
+                if score > best_score and score > 0.5:  # At least 50% match
+                    best_score = score
+                    best_match = candidate
+        
+        return best_match
+    
+    def _validate_field_value_enhanced(self, field: Dict[str, Any], value: str) -> List[str]:
+        """Enhanced field value validation"""
         issues = []
         field_type = field.get('type', '').lower()
         field_label = field.get('label', field.get('identifier', 'field'))
         
         # Email validation
-        if field_type == 'email':
+        if field_type == 'email' or 'email' in field.get('name', '').lower():
             email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
             if not re.match(email_pattern, value):
                 issues.append(f"{field_label}: Invalid email format")
@@ -137,266 +174,436 @@ class UltraFormSubmitter:
                 issues.append(f"{field_label}: Invalid URL format")
         
         # Phone validation
-        elif field_type == 'tel' or 'phone' in field.get('name', '').lower():
-            # Basic phone validation (very permissive)
-            phone_pattern = r'[\d\s\(\)\-\+\.]+'
-            if not re.match(phone_pattern, value):
-                issues.append(f"{field_label}: Invalid phone format")
+        elif field_type == 'tel' or any(word in field.get('name', '').lower() for word in ['phone', 'tel', 'mobile']):
+            # More flexible phone validation
+            phone_clean = re.sub(r'[^\d+]', '', value)
+            if len(phone_clean) < 7 or len(phone_clean) > 15:
+                issues.append(f"{field_label}: Invalid phone number length")
+        
+        # Number validation
+        elif field_type in ['number', 'range']:
+            try:
+                float(value)
+            except ValueError:
+                issues.append(f"{field_label}: Must be a valid number")
         
         # Length validation
-        max_length = field.get('max_length')
-        if max_length and len(value) > int(max_length):
-            issues.append(f"{field_label}: Too long (max {max_length} characters)")
-        
-        min_length = field.get('min_length')
-        if min_length and len(value) < int(min_length):
-            issues.append(f"{field_label}: Too short (min {min_length} characters)")
-        
-        # Pattern validation
-        pattern = field.get('pattern')
-        if pattern:
-            try:
-                if not re.match(pattern, value):
-                    issues.append(f"{field_label}: Does not match required pattern")
-            except re.error:
-                pass  # Invalid regex pattern, skip validation
+        validation_rules = field.get('validation_rules', [])
+        for rule in validation_rules:
+            if rule.startswith('max_length:'):
+                max_length = int(rule.split(':')[1])
+                if len(value) > max_length:
+                    issues.append(f"{field_label}: Too long (max {max_length} characters)")
+            elif rule.startswith('min_length:'):
+                min_length = int(rule.split(':')[1])
+                if len(value) < min_length:
+                    issues.append(f"{field_label}: Too short (min {min_length} characters)")
+            elif rule.startswith('pattern:'):
+                pattern = rule.split(':', 1)[1]
+                try:
+                    if not re.match(pattern, value):
+                        issues.append(f"{field_label}: Does not match required pattern")
+                except re.error:
+                    pass  # Skip invalid patterns
         
         # Select field validation
         if field.get('tag') == 'select':
             valid_options = [opt.get('value', '') for opt in field.get('options', [])]
-            if value not in valid_options:
-                issues.append(f"{field_label}: Invalid option selected")
+            if value not in valid_options and valid_options:
+                issues.append(f"{field_label}: Invalid option '{value}'. Valid options: {', '.join(valid_options[:5])}")
         
         return issues
     
-    async def submit_form_ultra(self, url: str, field_data: Dict[str, str], form_index: int = 0) -> Dict[str, Any]:
-        """Submit form with ultra-robust error handling and retry logic"""
-        max_retries = 3
-        retry_delay = 1
+    async def submit_form_enhanced(self, url: str, field_data: Dict[str, str], 
+                                 form_index: int = 0, max_retries: int = 3) -> Dict[str, Any]:
+        """Enhanced form submission with intelligent method selection"""
         
+        # Validate first
+        validation = await self.validate_submission_enhanced(url, field_data, form_index)
+        if not validation.get('valid'):
+            return {
+                'success': False,
+                'error': 'Form validation failed',
+                'validation': validation
+            }
+        
+        # Determine best submission method
+        submission_method = await self._determine_submission_method(url, validation)
+        
+        # Attempt submission with retries
         for attempt in range(max_retries):
             try:
-                result = await self._attempt_form_submission(url, field_data, form_index)
+                if submission_method == 'http_session':
+                    result = await self._submit_with_session(url, field_data, form_index, attempt)
+                else:
+                    result = await self._submit_with_browser(url, field_data, form_index, attempt)
+                
+                # Record submission attempt
+                self._record_submission_attempt(url, field_data, result, attempt + 1)
                 
                 if result.get('success'):
+                    result['validation'] = validation
+                    result['attempts'] = attempt + 1
+                    result['method_used'] = submission_method
                     return result
                 elif attempt < max_retries - 1:
-                    # Wait before retry
-                    await asyncio.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                    logger.info(f"Retrying submission (attempt {attempt + 2}/{max_retries})")
-                else:
-                    return result
+                    # Wait before retry with exponential backoff
+                    wait_time = (2 ** attempt) + random.uniform(0, 1)
+                    logger.info(f"Submission attempt {attempt + 1} failed, retrying in {wait_time:.1f}s...")
+                    await asyncio.sleep(wait_time)
                     
+                    # Switch methods on failure
+                    if submission_method == 'http_session':
+                        submission_method = 'browser_automation'
+                        logger.info("Switching to browser automation for retry")
+                
             except Exception as e:
-                if attempt < max_retries - 1:
-                    logger.warning(f"Submission attempt {attempt + 1} failed: {str(e)}")
-                    await asyncio.sleep(retry_delay)
-                    retry_delay *= 2
-                else:
+                logger.warning(f"Submission attempt {attempt + 1} failed with error: {str(e)}")
+                if attempt == max_retries - 1:
                     return {
                         'success': False,
-                        'error': f"All submission attempts failed. Final error: {str(e)}",
+                        'error': f"All {max_retries} submission attempts failed. Final error: {str(e)}",
+                        'validation': validation,
                         'attempts': max_retries
                     }
         
         return {
             'success': False,
-            'error': 'Maximum retry attempts exceeded',
+            'error': f'All {max_retries} submission attempts failed',
+            'validation': validation,
             'attempts': max_retries
         }
     
-    async def _attempt_form_submission(self, url: str, field_data: Dict[str, str], form_index: int = 0) -> Dict[str, Any]:
-        """Single attempt at form submission"""
+    async def _determine_submission_method(self, url: str, validation: Dict[str, Any]) -> str:
+        """Determine the best submission method based on validation results"""
+        validation_method = validation.get('method_used', 'browser_automation')
+        
+        # If validation used HTTP session successfully, prefer that for speed
+        if validation_method == 'http_session':
+            return 'http_session'
+        
+        # For complex cases, use browser automation
+        return 'browser_automation'
+    
+    async def _submit_with_session(self, url: str, field_data: Dict[str, str], 
+                                 form_index: int, attempt: int) -> Dict[str, Any]:
+        """Submit form using HTTP session for speed"""
         try:
-            session = await self._get_session()
+            if not self.session_page:
+                self.session_page = self.scraper._get_session_page()
             
-            # First, get the form page to extract form details and CSRF tokens
-            async with session.get(url, allow_redirects=True) as response:
-                if response.status not in [200, 201]:
-                    return {
-                        'success': False,
-                        'error': f"Cannot access form page: HTTP {response.status}",
-                        'status_code': response.status
-                    }
-                
-                form_html = await response.text()
-                actual_url = str(response.url)
-            
-            # Parse the form
-            soup = BeautifulSoup(form_html, 'html.parser')
-            forms = soup.find_all('form')
-            
-            if not forms:
-                return {
-                    'success': False,
-                    'error': 'No forms found on page'
-                }
+            # Get form details
+            self.session_page.get(url)
+            forms = self.session_page.eles('tag:form')
             
             if form_index >= len(forms):
-                return {
-                    'success': False,
-                    'error': f'Form index {form_index} not found. Page has {len(forms)} forms.'
-                }
+                return {'success': False, 'error': f'Form index {form_index} not found'}
             
             form = forms[form_index]
+            form_action = self.scraper._get_form_action(form, self.session_page.url)
+            form_method = (form.attr('method') or 'POST').upper()
             
-            # Extract form action and method
-            form_action = form.get('action', '')
-            if not form_action:
-                form_action = actual_url
-            elif not form_action.startswith('http'):
-                form_action = urljoin(actual_url, form_action)
-            
-            form_method = form.get('method', 'POST').upper()
-            form_enctype = form.get('enctype', 'application/x-www-form-urlencoded')
-            
-            # Build form data
+            # Build submission data
             submission_data = {}
             
-            # Include hidden fields (important for CSRF tokens, etc.)
-            hidden_fields = form.find_all('input', {'type': 'hidden'})
+            # Include hidden fields
+            hidden_fields = form.eles('css:input[type="hidden"]')
             for hidden in hidden_fields:
-                name = hidden.get('name')
-                value = hidden.get('value', '')
+                name = hidden.attr('name')
+                value = hidden.attr('value') or ''
                 if name:
                     submission_data[name] = value
             
-            # Add provided field data
-            submission_data.update(field_data)
+            # Add provided data with intelligent field matching
+            form_fields = self.scraper._extract_field_details_from_element(form, self.session_page)
+            for field in form_fields:
+                provided_value = self.scraper._find_field_value(field, field_data)
+                if provided_value:
+                    field_name = field.get('name') or field.get('id')
+                    if field_name:
+                        submission_data[field_name] = provided_value
             
-            # Set additional headers for form submission
-            submit_headers = {
-                'Referer': actual_url,
-                'Origin': f"{urlparse(actual_url).scheme}://{urlparse(actual_url).netloc}",
-                'X-Requested-With': 'XMLHttpRequest',  # Some forms expect this
-            }
-            
-            if form_enctype == 'multipart/form-data':
-                submit_headers['Content-Type'] = 'multipart/form-data'
-            else:
-                submit_headers['Content-Type'] = 'application/x-www-form-urlencoded'
-            
-            # Submit the form
+            # Submit form
             if form_method == 'GET':
-                async with session.get(form_action, params=submission_data, headers=submit_headers) as submit_response:
-                    return await self._process_submission_response(submit_response, actual_url)
+                self.session_page.get(form_action, params=submission_data)
             else:
-                if form_enctype == 'multipart/form-data':
-                    # Use FormData for multipart
-                    data = aiohttp.FormData()
-                    for key, value in submission_data.items():
-                        data.add_field(key, str(value))
-                    async with session.post(form_action, data=data, headers=submit_headers) as submit_response:
-                        return await self._process_submission_response(submit_response, actual_url)
-                else:
-                    # Regular form submission
-                    async with session.post(form_action, data=submission_data, headers=submit_headers) as submit_response:
-                        return await self._process_submission_response(submit_response, actual_url)
+                self.session_page.post(form_action, data=submission_data)
+            
+            return await self._process_submission_response(self.session_page, url)
             
         except Exception as e:
-            logger.error(f"Form submission error: {str(e)}")
-            return {
-                'success': False,
-                'error': f"Submission failed: {str(e)}"
-            }
+            return {'success': False, 'error': f'Session submission failed: {str(e)}'}
     
-    async def _process_submission_response(self, response, original_url: str) -> Dict[str, Any]:
-        """Process the response from form submission"""
+    async def _submit_with_browser(self, url: str, field_data: Dict[str, str], 
+                                 form_index: int, attempt: int) -> Dict[str, Any]:
+        """Submit form using browser automation for complex cases"""
         try:
-            response_text = await response.text()
-            response_url = str(response.url)
+            if not self.browser_page:
+                self.browser_page = await self.scraper._get_browser_page()
             
-            # Build redirect chain
-            redirect_chain = []
-            if hasattr(response, 'history'):
-                for redirect in response.history:
-                    redirect_chain.append({
-                        'url': str(redirect.url),
-                        'status': redirect.status
-                    })
+            # Navigate to page and handle challenges
+            self.browser_page.get(url)
+            await self.scraper._handle_cloudflare_challenges(self.browser_page)
             
-            # Analyze response for success indicators
-            success_indicators = self._detect_success_indicators(response_text, response.status)
-            error_indicators = self._detect_error_indicators(response_text, response.status)
+            # Wait for page to be fully loaded
+            await asyncio.sleep(2)
             
-            # Determine if submission was successful
+            # Find form
+            forms = self.browser_page.eles('tag:form')
+            if form_index >= len(forms):
+                return {'success': False, 'error': f'Form index {form_index} not found'}
+            
+            form = forms[form_index]
+            
+            # Fill form fields
+            fill_results = await self._fill_form_fields_intelligently(form, field_data)
+            
+            if fill_results['errors']:
+                logger.warning(f"Field filling errors: {fill_results['errors']}")
+            
+            # Handle form submission
+            submission_result = await self._handle_form_submission(form, self.browser_page)
+            
+            # Combine results
+            result = await self._process_submission_response(self.browser_page, url)
+            result['field_filling'] = fill_results
+            result['submission_method'] = submission_result.get('method', 'unknown')
+            
+            return result
+            
+        except Exception as e:
+            return {'success': False, 'error': f'Browser submission failed: {str(e)}'}
+    
+    async def _fill_form_fields_intelligently(self, form, field_data: Dict[str, str]) -> Dict[str, Any]:
+        """Fill form fields with intelligent field matching"""
+        filled_fields = []
+        errors = []
+        warnings = []
+        
+        # Get all form fields
+        field_elements = form.eles('tag:input, tag:textarea, tag:select')
+        
+        for element in field_elements:
+            try:
+                field_type = element.attr('type') or 'text'
+                
+                # Skip non-input fields
+                if field_type.lower() in ['hidden', 'submit', 'button', 'image', 'reset']:
+                    continue
+                
+                # Find value for this field
+                field_info = {
+                    'tag': element.tag,
+                    'type': field_type,
+                    'name': element.attr('name') or '',
+                    'id': element.attr('id') or '',
+                    'identifier': element.attr('id') or element.attr('name') or ''
+                }
+                
+                value = self.scraper._find_field_value(field_info, field_data)
+                
+                if value:
+                    success = await self._fill_single_field(element, value, field_info)
+                    if success:
+                        filled_fields.append({
+                            'field': field_info['identifier'] or field_info['name'],
+                            'value': value[:50] + '...' if len(value) > 50 else value
+                        })
+                    else:
+                        errors.append(f"Failed to fill field: {field_info['identifier'] or field_info['name']}")
+                
+            except Exception as e:
+                errors.append(f"Error processing field: {str(e)}")
+        
+        return {
+            'filled_fields': filled_fields,
+            'fields_filled': len(filled_fields),
+            'errors': errors,
+            'warnings': warnings
+        }
+    
+    async def _fill_single_field(self, element, value: str, field_info: Dict[str, Any]) -> bool:
+        """Fill a single form field with proper handling for different field types"""
+        try:
+            field_type = field_info.get('type', '').lower()
+            tag = field_info.get('tag', '').lower()
+            
+            # Handle different field types
+            if tag == 'select':
+                # Handle select dropdowns
+                options = element.eles('tag:option')
+                for option in options:
+                    option_value = option.attr('value') or option.text
+                    if option_value.lower() == value.lower() or option.text.lower() == value.lower():
+                        option.click()
+                        await asyncio.sleep(0.5)
+                        return True
+                return False
+                
+            elif field_type == 'checkbox':
+                # Handle checkboxes
+                if value.lower() in ['true', '1', 'yes', 'on', 'checked']:
+                    if not element.states.is_checked:
+                        element.click()
+                        await asyncio.sleep(0.3)
+                return True
+                
+            elif field_type == 'radio':
+                # Handle radio buttons
+                radio_name = element.attr('name')
+                if radio_name:
+                    radio_group = element.parent().eles(f'css:input[name="{radio_name}"]')
+                    for radio in radio_group:
+                        radio_value = radio.attr('value') or ''
+                        if radio_value.lower() == value.lower():
+                            radio.click()
+                            await asyncio.sleep(0.3)
+                            return True
+                return False
+                
+            elif field_type == 'file':
+                # Handle file uploads (placeholder - would need actual file path)
+                logger.warning(f"File upload field detected but not implemented: {field_info['identifier']}")
+                return False
+                
+            else:
+                # Handle text inputs, textareas, etc.
+                element.clear()
+                await asyncio.sleep(0.1)
+                
+                # Type value with human-like typing
+                await self._human_like_typing(element, value)
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error filling field {field_info.get('identifier', 'unknown')}: {str(e)}")
+            return False
+    
+    async def _human_like_typing(self, element, text: str):
+        """Type text with human-like delays and patterns"""
+        element.click()  # Focus the element
+        await asyncio.sleep(0.1)
+        
+        # Type with random delays between characters
+        for char in text:
+            element.input(char)
+            # Random delay between 50-150ms
+            await asyncio.sleep(random.uniform(0.05, 0.15))
+    
+    async def _handle_form_submission(self, form, browser_page) -> Dict[str, Any]:
+        """Handle form submission with multiple strategies"""
+        try:
+            # Strategy 1: Look for submit button
+            submit_buttons = form.eles('css:input[type="submit"], button[type="submit"], button')
+            
+            if submit_buttons:
+                submit_button = submit_buttons[0]
+                logger.info(f"Clicking submit button: {submit_button.attr('value') or submit_button.text}")
+                submit_button.click()
+                await asyncio.sleep(2)
+                return {'method': 'submit_button', 'success': True}
+            
+            # Strategy 2: Submit form directly
+            logger.info("No submit button found, submitting form directly")
+            form.submit()
+            await asyncio.sleep(2)
+            return {'method': 'form_submit', 'success': True}
+            
+        except Exception as e:
+            # Strategy 3: Press Enter in the last input field
+            try:
+                inputs = form.eles('css:input[type="text"], input[type="email"], textarea')
+                if inputs:
+                    last_input = inputs[-1]
+                    last_input.click()
+                    last_input.input('\n')  # Press Enter
+                    await asyncio.sleep(2)
+                    return {'method': 'enter_key', 'success': True}
+            except:
+                pass
+            
+            return {'method': 'failed', 'success': False, 'error': str(e)}
+    
+    async def _process_submission_response(self, page, original_url: str) -> Dict[str, Any]:
+        """Process response after form submission"""
+        try:
+            current_url = page.url
+            
+            # Wait for any redirects or page changes
+            await asyncio.sleep(3)
+            final_url = page.url
+            
+            # Get page content
+            if hasattr(page, 'html'):
+                content = page.html
+            else:
+                content = page.raw_data.decode('utf-8', errors='ignore')
+            
+            # Analyze response
+            success_indicators = self._detect_success_indicators(content, final_url, original_url)
+            error_indicators = self._detect_error_indicators(content)
+            
+            # Determine success
             submission_success = (
-                response.status in [200, 201, 302, 303] and
                 len(error_indicators) == 0 and
                 len(success_indicators) > 0
             )
             
             # Extract confirmation message
-            confirmation = self._extract_confirmation_message(response_text, success_indicators)
-            
-            # Gather evidence of submission
-            evidence = {
-                'success_indicators': success_indicators,
-                'error_indicators': error_indicators,
-                'response_contains_form': 'form' in response_text.lower(),
-                'response_length': len(response_text),
-                'redirected': response_url != original_url,
-                'new_page_detected': any(word in response_text.lower() for word in ['thank you', 'received', 'submitted', 'confirmation'])
-            }
+            confirmation = self._extract_confirmation_message(content, success_indicators)
             
             result = {
                 'success': submission_success,
-                'status_code': response.status,
-                'response_url': response_url,
-                'redirect_chain': redirect_chain,
-                'confirmation': confirmation,
-                'evidence': evidence
+                'original_url': original_url,
+                'final_url': final_url,
+                'url_changed': final_url != original_url,
+                'success_indicators': success_indicators,
+                'error_indicators': error_indicators,
+                'confirmation': confirmation
             }
             
-            if not submission_success:
-                error_message = "Form submission may have failed"
-                if error_indicators:
-                    error_message = f"Errors detected: {', '.join(error_indicators)}"
-                elif response.status >= 400:
-                    error_message = f"HTTP error {response.status}"
-                elif not success_indicators:
-                    error_message = "No success confirmation detected"
-                
-                result['error'] = error_message
-                result['message'] = error_message
+            if submission_success:
+                result['message'] = confirmation or 'Form submitted successfully'
             else:
-                result['message'] = confirmation or "Form submitted successfully"
+                error_msg = 'Form submission may have failed'
+                if error_indicators:
+                    error_msg = f"Errors detected: {', '.join(error_indicators)}"
+                elif not success_indicators:
+                    error_msg = 'No success confirmation detected'
+                result['error'] = error_msg
+                result['message'] = error_msg
             
             return result
             
         except Exception as e:
             return {
                 'success': False,
-                'error': f"Response processing failed: {str(e)}",
-                'status_code': getattr(response, 'status', 0)
+                'error': f'Response processing failed: {str(e)}'
             }
     
-    def _detect_success_indicators(self, response_text: str, status_code: int) -> List[str]:
-        """Detect indicators that the form was submitted successfully"""
+    def _detect_success_indicators(self, content: str, final_url: str, original_url: str) -> List[str]:
+        """Detect success indicators in response"""
         indicators = []
-        text_lower = response_text.lower()
+        content_lower = content.lower()
         
-        # Status code indicators
-        if status_code in [200, 201]:
-            indicators.append('http_success_status')
-        elif status_code in [302, 303]:
-            indicators.append('redirect_after_submit')
+        # URL change often indicates success
+        if final_url != original_url:
+            indicators.append('url_changed')
         
-        # Text-based indicators
+        # Text-based success indicators
         success_phrases = [
             'thank you', 'submitted successfully', 'application received',
             'form submitted', 'your application', 'confirmation',
             'we have received', 'successfully sent', 'message sent',
             'registration complete', 'account created', 'saved successfully',
-            'submission successful', 'application submitted'
+            'submission successful', 'application submitted', 'success'
         ]
         
         for phrase in success_phrases:
-            if phrase in text_lower:
-                indicators.append(f'success_text:{phrase.replace(" ", "_")}')
+            if phrase in content_lower:
+                indicators.append(f'success_text_{phrase.replace(" ", "_")}')
         
-        # Look for confirmation numbers or IDs
+        # Look for confirmation numbers
         confirmation_patterns = [
             r'confirmation\s*#?\s*:?\s*([a-zA-Z0-9]+)',
             r'reference\s*#?\s*:?\s*([a-zA-Z0-9]+)',
@@ -405,20 +612,16 @@ class UltraFormSubmitter:
         ]
         
         for pattern in confirmation_patterns:
-            matches = re.findall(pattern, response_text, re.IGNORECASE)
-            if matches:
-                indicators.append(f'confirmation_number_found')
+            if re.search(pattern, content, re.IGNORECASE):
+                indicators.append('confirmation_number_found')
+                break
         
         return indicators
     
-    def _detect_error_indicators(self, response_text: str, status_code: int) -> List[str]:
-        """Detect indicators that the form submission failed"""
+    def _detect_error_indicators(self, content: str) -> List[str]:
+        """Detect error indicators in response"""
         indicators = []
-        text_lower = response_text.lower()
-        
-        # Status code indicators
-        if status_code >= 400:
-            indicators.append(f'http_error_{status_code}')
+        content_lower = content.lower()
         
         # Text-based error indicators
         error_phrases = [
@@ -429,57 +632,94 @@ class UltraFormSubmitter:
         ]
         
         for phrase in error_phrases:
-            if phrase in text_lower:
-                indicators.append(f'error_text:{phrase.replace(" ", "_")}')
+            if phrase in content_lower:
+                indicators.append(f'error_text_{phrase.replace(" ", "_")}')
         
-        # Look for form validation errors
-        if 'class="error"' in response_text or 'class="invalid"' in response_text:
-            indicators.append('validation_error_detected')
-        
-        # Check if the same form is still present (might indicate failed submission)
-        if '<form' in response_text:
-            indicators.append('form_still_present')
+        # HTML error indicators
+        if 'class="error"' in content or 'class="invalid"' in content:
+            indicators.append('html_error_classes')
         
         return indicators
     
-    def _extract_confirmation_message(self, response_text: str, success_indicators: List[str]) -> str:
+    def _extract_confirmation_message(self, content: str, success_indicators: List[str]) -> str:
         """Extract confirmation message from response"""
-        soup = BeautifulSoup(response_text, 'html.parser')
+        # Simple extraction - look for common confirmation text
+        content_lower = content.lower()
         
-        # Look for elements that might contain confirmation
-        confirmation_selectors = [
-            '.success', '.confirmation', '.thank-you', '.message',
-            '#success', '#confirmation', '#thank-you', '#message',
-            '[class*="success"]', '[class*="confirm"]', '[class*="thank"]'
-        ]
-        
-        for selector in confirmation_selectors:
-            try:
-                elements = soup.select(selector)
-                for element in elements:
-                    text = element.get_text().strip()
-                    if text and len(text) < 500:  # Reasonable message length
-                        return text
-            except:
-                continue
-        
-        # Look for thank you or confirmation text in the page
-        text_lower = response_text.lower()
-        if 'thank you' in text_lower:
-            # Try to extract the thank you message
-            soup_text = soup.get_text()
-            lines = [line.strip() for line in soup_text.split('\n') if line.strip()]
+        if 'thank you' in content_lower:
+            # Try to extract a reasonable thank you message
+            lines = content.split('\n')
             for line in lines:
-                if 'thank you' in line.lower() and len(line) < 200:
-                    return line
+                line_clean = line.strip()
+                if 'thank you' in line_clean.lower() and len(line_clean) < 200:
+                    return line_clean
         
-        # Default message based on indicators
+        # Default based on indicators
         if success_indicators:
             return "Form appears to have been submitted successfully"
         
         return ""
     
+    def _record_submission_attempt(self, url: str, field_data: Dict[str, str], 
+                                 result: Dict[str, Any], attempt: int):
+        """Record submission attempt for debugging and analytics"""
+        record = {
+            'timestamp': time.time(),
+            'url': url,
+            'attempt': attempt,
+            'success': result.get('success', False),
+            'error': result.get('error'),
+            'method': result.get('method_used', 'unknown'),
+            'field_count': len(field_data)
+        }
+        
+        self.submission_history.append(record)
+        
+        # Keep only last 100 records
+        if len(self.submission_history) > 100:
+            self.submission_history = self.submission_history[-100:]
+    
     async def close(self):
         """Clean up resources"""
-        if self.session and not self.session.closed:
-            await self.session.close()
+        await self.scraper.close()
+        
+        if self.browser_page:
+            try:
+                self.browser_page.quit()
+            except:
+                pass
+        
+        if self.session_page:
+            try:
+                self.session_page.close()
+            except:
+                pass
+
+# Example usage
+async def test_enhanced_submitter():
+    """Test the enhanced form submitter"""
+    submitter = EnhancedFormSubmitter(use_stealth=True, headless=False)
+    
+    try:
+        test_url = "https://httpbin.org/forms/post"
+        test_data = {
+            "custname": "John Doe",
+            "custtel": "555-1234", 
+            "custemail": "john@example.com",
+            "comments": "This is a test submission"
+        }
+        
+        print("Validating form data...")
+        validation = await submitter.validate_submission_enhanced(test_url, test_data)
+        print(f"Validation result: {validation}")
+        
+        if validation.get('valid'):
+            print("\nSubmitting form...")
+            result = await submitter.submit_form_enhanced(test_url, test_data)
+            print(f"Submission result: {result}")
+        
+    finally:
+        await submitter.close()
+
+if __name__ == "__main__":
+    asyncio.run(test_enhanced_submitter())
