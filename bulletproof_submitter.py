@@ -379,80 +379,137 @@ class BulletproofFormSubmitter:
             }
     
     async def _safe_fill_form_fields(self, form, field_data: Dict[str, str]) -> Dict[str, Any]:
-        """Enhanced form field filling with better error handling"""
+        """Enhanced form field filling with extensive debugging"""
         try:
             filled_fields = []
             errors = []
             skipped_fields = []
             
-            # Get field elements with timeout
+            logger.info(f"🔍 DEBUG: Starting form field filling...")
+            logger.info(f"🔍 DEBUG: Form object type: {type(form)}")
+            logger.info(f"🔍 DEBUG: Form HTML preview: {str(form)[:200] if form else 'NO FORM'}")
+            
+            # Get field elements with timeout and debugging
             try:
+                logger.info(f"🔍 DEBUG: Looking for form elements...")
                 field_elements = form.eles('tag:input, tag:textarea, tag:select')
-                logger.debug(f"🔍 Found {len(field_elements)} form elements")
+                logger.info(f"🔍 DEBUG: Found {len(field_elements)} form elements")
+                
+                # Also try alternative selectors
+                alt_inputs = form.eles('css:input')
+                alt_textareas = form.eles('css:textarea')
+                logger.info(f"🔍 DEBUG: Alternative count - inputs: {len(alt_inputs)}, textareas: {len(alt_textareas)}")
+                
             except Exception as e:
+                logger.error(f"❌ DEBUG: Could not find form fields: {e}")
                 return {
                     'fields_filled': 0,
                     'errors': [f"Could not find form fields: {str(e)[:50]}"],
                     'filled_fields': [],
-                    'skipped_fields': []
+                    'skipped_fields': [],
+                    'debug_info': f"Form element search failed: {e}"
                 }
+            
+            if not field_elements:
+                logger.error(f"❌ DEBUG: No form elements found!")
+                
+                # Try to get the form's inner HTML for debugging
+                try:
+                    form_html = form.html if hasattr(form, 'html') else 'No HTML available'
+                    logger.info(f"🔍 DEBUG: Form inner HTML: {form_html[:500]}")
+                    
+                    # Try to find ALL elements in the form
+                    all_elements = form.eles('*')
+                    logger.info(f"🔍 DEBUG: Total elements in form: {len(all_elements)}")
+                    
+                except Exception as e:
+                    logger.error(f"❌ DEBUG: Can't get form HTML: {e}")
+                
+                return {
+                    'fields_filled': 0,
+                    'errors': ['No form elements found - form might be empty or inaccessible'],
+                    'filled_fields': [],
+                    'skipped_fields': [],
+                    'debug_info': f"No elements found. Form HTML length: {len(str(form)) if form else 0}"
+                }
+            
+            logger.info(f"✅ DEBUG: Processing {len(field_elements)} elements...")
             
             for i, element in enumerate(field_elements):
                 try:
-                    # Get field information
-                    field_type = element.attr('type') or 'text'
-                    field_name = element.attr('name') or ''
-                    field_id = element.attr('id') or ''
-                    field_placeholder = element.attr('placeholder') or ''
+                    logger.info(f"🔍 DEBUG: Processing element {i+1}/{len(field_elements)}")
+                    
+                    # Get element info with debugging
+                    try:
+                        element_tag = element.tag
+                        field_type = element.attr('type') or 'text'
+                        field_name = element.attr('name') or ''
+                        field_id = element.attr('id') or ''
+                        
+                        logger.info(f"🔍 DEBUG: Element {i+1}: tag={element_tag}, type={field_type}, name={field_name}, id={field_id}")
+                        
+                    except Exception as e:
+                        logger.error(f"❌ DEBUG: Can't get element attributes: {e}")
+                        errors.append(f"Element {i+1}: attribute error - {str(e)[:50]}")
+                        continue
                     
                     # Skip non-fillable fields
                     if field_type.lower() in ['hidden', 'submit', 'button', 'image', 'reset']:
                         skipped_fields.append(f"{field_type} field skipped")
+                        logger.info(f"⏭️ DEBUG: Skipped {field_type} field")
                         continue
                     
-                    # Find value for this field using multiple strategies
+                    # Find value for this field
                     field_identifier = field_id or field_name or f'field_{i}'
                     value = self._find_field_value_multiple_strategies(
-                        field_data, field_identifier, field_name, field_id, field_placeholder
+                        field_data, field_identifier, field_name, field_id, ""
                     )
                     
+                    logger.info(f"🔍 DEBUG: Field '{field_identifier}' -> Value: '{value}'")
+                    
                     if value is not None:
+                        logger.info(f"🎯 DEBUG: Attempting to fill field '{field_identifier}' with '{value}'...")
                         success = await self._safe_fill_single_field(element, str(value), field_type)
+                        
                         if success:
                             filled_fields.append({
                                 'field': field_identifier,
                                 'type': field_type,
                                 'value': str(value)[:50] + '...' if len(str(value)) > 50 else str(value)
                             })
-                            logger.debug(f"✅ Filled field: {field_identifier}")
+                            logger.info(f"✅ DEBUG: Successfully filled field: {field_identifier}")
                         else:
                             errors.append(f"Failed to fill field: {field_identifier}")
-                            logger.debug(f"⚠️ Failed to fill: {field_identifier}")
+                            logger.error(f"❌ DEBUG: Failed to fill field: {field_identifier}")
                     else:
                         skipped_fields.append(f"No value found for: {field_identifier}")
+                        logger.info(f"⏭️ DEBUG: No value for field: {field_identifier}")
                 
                 except Exception as e:
                     error_msg = f"Error with field {i}: {str(e)[:50]}"
                     errors.append(error_msg)
-                    logger.debug(f"⚠️ {error_msg}")
+                    logger.error(f"❌ DEBUG: {error_msg}")
             
             result = {
                 'fields_filled': len(filled_fields),
                 'filled_fields': filled_fields,
                 'errors': errors,
                 'skipped_fields': skipped_fields,
-                'total_elements': len(field_elements)
+                'total_elements': len(field_elements),
+                'debug_info': f"Processed {len(field_elements)} elements, found values for {len([f for f in filled_fields])}"
             }
             
-            logger.info(f"📊 Field filling summary: {len(filled_fields)} filled, {len(errors)} errors, {len(skipped_fields)} skipped")
+            logger.info(f"📊 DEBUG: Final summary - Filled: {len(filled_fields)}, Errors: {len(errors)}, Skipped: {len(skipped_fields)}")
             return result
             
         except Exception as e:
+            logger.error(f"❌ DEBUG: Form filling completely failed: {e}")
             return {
                 'fields_filled': 0,
                 'errors': [f"Form filling failed: {str(e)[:100]}"],
                 'filled_fields': [],
-                'skipped_fields': []
+                'skipped_fields': [],
+                'debug_info': f"Complete failure: {e}"
             }
     
     def _find_field_value_multiple_strategies(self, field_data: Dict[str, str], 
