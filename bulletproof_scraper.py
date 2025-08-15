@@ -45,7 +45,7 @@ class BulletproofFormScraper:
             return None, None, None, False
     
     def _create_safe_options(self):
-        """Create browser options with Docker-specific fixes"""
+        """Create browser options with DrissionPage-specific fixes"""
         ChromiumPage, ChromiumOptions, SessionPage, available = self._safe_import_drissionpage()
         
         if not available or not ChromiumOptions:
@@ -54,49 +54,48 @@ class BulletproofFormScraper:
         try:
             co = ChromiumOptions()
             
-            # CRITICAL DOCKER FLAGS (from forum post)
-            docker_args = [
-                '--no-sandbox',                    # ESSENTIAL for root in Docker
-                '--disable-dev-shm-usage',         # Shared memory issues
-                '--disable-gpu',                   # GPU not available in container
-                '--disable-software-rasterizer',   # Software rendering issues
+            # CRITICAL: Use --headless=new (DrissionPage recommendation)
+            essential_args = [
+                '--headless=new',                   # DrissionPage specific requirement!
+                '--no-sandbox',                     # Linux requirement
+                '--disable-dev-shm-usage',          # Docker requirement
+                '--disable-gpu',                    # Container requirement
+                '--disable-software-rasterizer',
+                '--disable-web-security',
+                '--remote-debugging-port=0',        # Avoid port conflicts
                 '--disable-background-timer-throttling',
                 '--disable-backgrounding-occluded-windows',
                 '--disable-renderer-backgrounding',
-                '--disable-web-security',          # Cross-origin issues
                 '--disable-features=TranslateUI',
                 '--disable-extensions',
-                '--disable-component-extensions-with-background-pages',
                 '--disable-default-apps',
                 '--mute-audio',
                 '--no-first-run',
-                '--disable-background-networking',
-                '--disable-sync',                  # No Google sync
-                '--disable-default-browser-check',
-                '--disable-popup-blocking',
-                '--disable-translate',
-                '--disable-plugins',
-                '--disable-images',                # Speed up loading
-                '--disable-javascript',            # We just need form structure
-                '--disable-css',                  # Speed up loading
-                '--virtual-time-budget=1000'      # Speed up page load
+                '--disable-sync',
+                '--disable-default-browser-check'
             ]
             
-            # Add all Docker-specific arguments
-            for arg in docker_args:
+            # Add all essential arguments
+            for arg in essential_args:
                 try:
                     co.set_argument(arg)
-                    logger.debug(f"✅ Added Docker arg: {arg}")
+                    logger.debug(f"✅ Added essential arg: {arg}")
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to add arg {arg}: {e}")
             
-            # Headless mode
-            if self.headless:
-                try:
-                    co.headless(True)
-                    logger.debug("✅ Headless mode enabled")
-                except Exception as e:
-                    logger.debug(f"⚠️ Headless mode failed: {e}")
+            # Set user data directory to avoid conflicts
+            try:
+                co.set_user_data_path('/tmp/chrome_user_data')
+                logger.debug("✅ Set user data path")
+            except Exception as e:
+                logger.debug(f"⚠️ Failed to set user data path: {e}")
+            
+            # Set debugging port to avoid conflicts
+            try:
+                co.set_argument('--remote-debugging-port=0')  # Let Chrome choose port
+                logger.debug("✅ Set debugging port")
+            except Exception as e:
+                logger.debug(f"⚠️ Failed to set debugging port: {e}")
             
             # User agent
             user_agent = random.choice(self.user_agents)
