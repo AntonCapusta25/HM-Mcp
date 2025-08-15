@@ -45,7 +45,7 @@ class BulletproofFormScraper:
             return None, None, None, False
     
     def _create_safe_options(self):
-        """Create browser options with extensive error handling"""
+        """Create browser options with Docker-specific fixes"""
         ChromiumPage, ChromiumOptions, SessionPage, available = self._safe_import_drissionpage()
         
         if not available or not ChromiumOptions:
@@ -54,18 +54,49 @@ class BulletproofFormScraper:
         try:
             co = ChromiumOptions()
             
-            # Basic settings first
+            # CRITICAL DOCKER FLAGS (from forum post)
+            docker_args = [
+                '--no-sandbox',                    # ESSENTIAL for root in Docker
+                '--disable-dev-shm-usage',         # Shared memory issues
+                '--disable-gpu',                   # GPU not available in container
+                '--disable-software-rasterizer',   # Software rendering issues
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
+                '--disable-web-security',          # Cross-origin issues
+                '--disable-features=TranslateUI',
+                '--disable-extensions',
+                '--disable-component-extensions-with-background-pages',
+                '--disable-default-apps',
+                '--mute-audio',
+                '--no-first-run',
+                '--disable-background-networking',
+                '--disable-sync',                  # No Google sync
+                '--disable-default-browser-check',
+                '--disable-popup-blocking',
+                '--disable-translate',
+                '--disable-plugins',
+                '--disable-images',                # Speed up loading
+                '--disable-javascript',            # We just need form structure
+                '--disable-css',                  # Speed up loading
+                '--virtual-time-budget=1000'      # Speed up page load
+            ]
+            
+            # Add all Docker-specific arguments
+            for arg in docker_args:
+                try:
+                    co.set_argument(arg)
+                    logger.debug(f"✅ Added Docker arg: {arg}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to add arg {arg}: {e}")
+            
+            # Headless mode
             if self.headless:
                 try:
                     co.headless(True)
                     logger.debug("✅ Headless mode enabled")
                 except Exception as e:
-                    logger.debug(f"⚠️ Failed to set headless with headless(): {e}")
-                    try:
-                        co.set_argument('--headless')
-                        logger.debug("✅ Headless mode enabled via argument")
-                    except Exception as e2:
-                        logger.warning(f"⚠️ Failed to set headless mode: {e2}")
+                    logger.debug(f"⚠️ Headless mode failed: {e}")
             
             # User agent
             user_agent = random.choice(self.user_agents)
@@ -73,24 +104,7 @@ class BulletproofFormScraper:
                 co.set_user_agent(user_agent)
                 logger.debug("✅ User agent set")
             except Exception as e:
-                logger.debug(f"⚠️ Failed to set user agent: {e}")
-            
-            # Stealth arguments
-            if self.use_stealth:
-                stealth_args = [
-                    '--no-sandbox',
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-web-security',
-                    '--disable-features=VizDisplayCompositor'
-                ]
-                
-                for arg in stealth_args:
-                    try:
-                        co.set_argument(arg)
-                    except Exception as e:
-                        logger.debug(f"⚠️ Failed to set argument {arg}: {e}")
+                logger.debug(f"⚠️ User agent failed: {e}")
             
             # Performance optimizations
             try:
@@ -98,7 +112,7 @@ class BulletproofFormScraper:
                 co.mute(True)
                 logger.debug("✅ Performance optimizations applied")
             except Exception as e:
-                logger.debug(f"⚠️ Failed to set performance options: {e}")
+                logger.debug(f"⚠️ Performance options failed: {e}")
             
             return co
             
@@ -592,32 +606,37 @@ class BulletproofFormScraper:
             return []
     
     async def _extract_fields_with_browser_safe(self, url: str, form_index: int) -> List[Dict[str, Any]]:
-        """Safely extract fields using browser"""
+        """Safely extract fields using browser with FIXED selectors"""
         try:
             self.browser_page.get(url)
             await asyncio.sleep(2)  # Wait for dynamic content
             
-            forms = self.browser_page.eles('tag:form')
+            # Use CSS selectors instead of tag selectors (FIXED!)
+            forms = self.browser_page.eles('css:form')
             if form_index >= len(forms):
                 return []
             
             form = forms[form_index]
             fields = []
             
-            field_elements = form.eles('tag:input, tag:textarea, tag:select')
+            # Get elements using CSS selectors (this is the fix!)
+            input_elements = form.eles('css:input')
+            textarea_elements = form.eles('css:textarea')
+            select_elements = form.eles('css:select')
             
-            for element in field_elements:
+            # Process input elements
+            for element in input_elements:
                 try:
                     field_type = element.attr('type') or 'text'
                     if field_type.lower() in ['hidden', 'submit', 'button']:
                         continue
                     
                     field_data = {
-                        'tag': element.tag,
+                        'tag': 'input',
                         'type': field_type,
                         'name': element.attr('name') or '',
                         'id': element.attr('id') or '',
-                        'identifier': element.attr('id') or element.attr('name') or f'field_{len(fields)}',
+                        'identifier': element.attr('id') or element.attr('name') or f'input_{len(fields)}',
                         'placeholder': element.attr('placeholder') or '',
                         'required': element.attr('required') is not None,
                         'label': self._safe_find_label(element),
@@ -626,24 +645,71 @@ class BulletproofFormScraper:
                         'pattern': element.attr('pattern') or ''
                     }
                     
-                    # Add options for select elements
-                    if element.tag == 'select':
-                        try:
-                            options = element.eles('tag:option')
-                            field_data['options'] = [
-                                {
-                                    'value': opt.attr('value') or '',
-                                    'text': opt.text or '',
-                                    'selected': opt.attr('selected') is not None
-                                } for opt in options
-                            ]
-                        except:
-                            field_data['options'] = []
+                    fields.append(field_data)
+                    
+                except Exception as e:
+                    logger.debug(f"⚠️ Input field extraction error: {e}")
+                    continue
+            
+            # Process textarea elements  
+            for element in textarea_elements:
+                try:
+                    field_data = {
+                        'tag': 'textarea',
+                        'type': 'textarea',
+                        'name': element.attr('name') or '',
+                        'id': element.attr('id') or '',
+                        'identifier': element.attr('id') or element.attr('name') or f'textarea_{len(fields)}',
+                        'placeholder': element.attr('placeholder') or '',
+                        'required': element.attr('required') is not None,
+                        'label': self._safe_find_label(element),
+                        'value': element.text or '',
+                        'maxlength': element.attr('maxlength') or '',
+                        'pattern': ''
+                    }
                     
                     fields.append(field_data)
                     
                 except Exception as e:
-                    logger.debug(f"⚠️ Field extraction error: {e}")
+                    logger.debug(f"⚠️ Textarea field extraction error: {e}")
+                    continue
+            
+            # Process select elements
+            for element in select_elements:
+                try:
+                    # Get select options
+                    options = []
+                    try:
+                        option_elements = element.eles('css:option')
+                        options = [
+                            {
+                                'value': opt.attr('value') or '',
+                                'text': opt.text or '',
+                                'selected': opt.attr('selected') is not None
+                            } for opt in option_elements
+                        ]
+                    except:
+                        options = []
+                    
+                    field_data = {
+                        'tag': 'select',
+                        'type': 'select',
+                        'name': element.attr('name') or '',
+                        'id': element.attr('id') or '',
+                        'identifier': element.attr('id') or element.attr('name') or f'select_{len(fields)}',
+                        'placeholder': '',
+                        'required': element.attr('required') is not None,
+                        'label': self._safe_find_label(element),
+                        'value': '',
+                        'maxlength': '',
+                        'pattern': '',
+                        'options': options
+                    }
+                    
+                    fields.append(field_data)
+                    
+                except Exception as e:
+                    logger.debug(f"⚠️ Select field extraction error: {e}")
                     continue
             
             return fields
