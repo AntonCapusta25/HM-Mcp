@@ -144,25 +144,11 @@ class FormFieldsData(BaseModel):
 class URLTestData(BaseModel):
     url: str = Field(description="The URL to test for accessibility")
 
-# Enhanced error wrapper
-def handle_errors(func):
-    """Decorator to handle errors consistently"""
-    async def wrapper(*args, **kwargs):
-        try:
-            return await func(*args, **kwargs)
-        except Exception as e:
-            logger.error(f"❌ Error in {func.__name__}: {str(e)}")
-            return {
-                "success": False,
-                "error": f"Tool error: {str(e)[:200]}",
-                "tool": func.__name__,
-                "timestamp": time.time()
-            }
-    return wrapper
+# Remove the decorator - FastMCP handles errors internally
+# Just use direct tool definitions
 
-# Fixed MCP Tools
+# Fixed MCP Tools (no decorator)
 @mcp.tool()
-@handle_errors
 async def health_check() -> Dict[str, Any]:
     """Health check endpoint with comprehensive status"""
     try:
@@ -207,90 +193,136 @@ async def health_check() -> Dict[str, Any]:
         }
 
 @mcp.tool()
-@handle_errors 
 async def analyze_page(data: FormAnalysisData) -> Dict[str, Any]:
     """Enhanced page analysis"""
-    scraper_instance = await get_scraper()
-    result = await scraper_instance.analyze_page_comprehensive_enhanced(data.url)
-    return result
+    try:
+        scraper_instance = await get_scraper()
+        result = await scraper_instance.analyze_page_comprehensive_enhanced(data.url)
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error in analyze_page: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Page analysis failed: {str(e)[:200]}",
+            "url": data.url
+        }
 
 @mcp.tool()
-@handle_errors
 async def scrape_form_fields(data: FormFieldsData) -> Dict[str, Any]:
     """Enhanced form field extraction"""
-    scraper_instance = await get_scraper()
-    result = await scraper_instance.extract_form_fields_enhanced(data.url, data.form_index)
-    return result
+    try:
+        scraper_instance = await get_scraper()
+        result = await scraper_instance.extract_form_fields_enhanced(data.url, data.form_index)
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error in scrape_form_fields: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Field extraction failed: {str(e)[:200]}",
+            "url": data.url
+        }
 
 @mcp.tool()
-@handle_errors
 async def validate_form_data(data: FormSubmissionData) -> Dict[str, Any]:
     """Enhanced form data validation"""
-    submitter_instance = await get_submitter()
-    result = await submitter_instance.validate_submission_enhanced(
-        data.url, data.field_data, data.form_index
-    )
-    return result
+    try:
+        submitter_instance = await get_submitter()
+        result = await submitter_instance.validate_submission_enhanced(
+            data.url, data.field_data, data.form_index
+        )
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error in validate_form_data: {str(e)}")
+        return {
+            "valid": False,
+            "error": f"Validation failed: {str(e)[:200]}",
+            "url": data.url
+        }
 
 @mcp.tool()
-@handle_errors
 async def submit_form(data: FormSubmissionData) -> Dict[str, Any]:
     """Enhanced form submission"""
-    submitter_instance = await get_submitter()
-    result = await submitter_instance.submit_form_enhanced(
-        data.url, data.field_data, data.form_index
-    )
-    return result
+    try:
+        submitter_instance = await get_submitter()
+        result = await submitter_instance.submit_form_enhanced(
+            data.url, data.field_data, data.form_index
+        )
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error in submit_form: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Form submission failed: {str(e)[:200]}",
+            "url": data.url
+        }
 
 @mcp.tool()
-@handle_errors
 async def test_form_access(data: URLTestData) -> Dict[str, Any]:
     """Enhanced URL accessibility testing"""
-    scraper_instance = await get_scraper()
-    result = await scraper_instance.test_url_accessibility_enhanced(data.url)
-    return result
+    try:
+        scraper_instance = await get_scraper()
+        result = await scraper_instance.test_url_accessibility_enhanced(data.url)
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error in test_form_access: {str(e)}")
+        return {
+            "accessible": False,
+            "error": f"Access test failed: {str(e)[:200]}",
+            "url": data.url
+        }
 
 @mcp.tool()
-@handle_errors
 async def get_submission_history() -> Dict[str, Any]:
     """Get recent form submission history"""
-    submitter_instance = await get_submitter()
-    history = getattr(submitter_instance, 'submission_history', [])
-    
-    recent_history = history[-10:] if len(history) > 10 else history
-    
-    if history:
-        success_count = sum(1 for record in history if record.get('success'))
-        success_rate = success_count / len(history)
-    else:
-        success_rate = 0.0
-    
-    return {
-        "total_submissions": len(history),
-        "recent_submissions": recent_history,
-        "success_rate": success_rate
-    }
+    try:
+        submitter_instance = await get_submitter()
+        history = getattr(submitter_instance, 'submission_history', [])
+        
+        recent_history = history[-10:] if len(history) > 10 else history
+        
+        if history:
+            success_count = sum(1 for record in history if record.get('success'))
+            success_rate = success_count / len(history)
+        else:
+            success_rate = 0.0
+        
+        return {
+            "total_submissions": len(history),
+            "recent_submissions": recent_history,
+            "success_rate": success_rate
+        }
+    except Exception as e:
+        logger.error(f"❌ Error in get_submission_history: {str(e)}")
+        return {
+            "error": f"Failed to get submission history: {str(e)[:200]}"
+        }
 
 @mcp.tool()
-@handle_errors
 async def configure_stealth_mode(enable_stealth: bool = True, headless: bool = True) -> Dict[str, Any]:
     """Configure stealth and anti-detection settings"""
-    global USE_STEALTH, HEADLESS
-    
-    # Update settings
-    USE_STEALTH = enable_stealth
-    HEADLESS = headless
-    
-    # Clean up existing instances
-    await safe_cleanup_scraper()
-    await safe_cleanup_submitter()
-    
-    return {
-        "success": True,
-        "stealth_mode": USE_STEALTH,
-        "headless_mode": HEADLESS,
-        "message": "Configuration updated. Components will be reinitialized."
-    }
+    try:
+        global USE_STEALTH, HEADLESS
+        
+        # Update settings
+        USE_STEALTH = enable_stealth
+        HEADLESS = headless
+        
+        # Clean up existing instances
+        await safe_cleanup_scraper()
+        await safe_cleanup_submitter()
+        
+        return {
+            "success": True,
+            "stealth_mode": USE_STEALTH,
+            "headless_mode": HEADLESS,
+            "message": "Configuration updated. Components will be reinitialized."
+        }
+    except Exception as e:
+        logger.error(f"❌ Error in configure_stealth_mode: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Configuration failed: {str(e)[:200]}"
+        }
 
 # Enhanced cleanup and startup
 async def cleanup():
