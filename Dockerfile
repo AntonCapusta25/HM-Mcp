@@ -19,9 +19,7 @@ RUN apt-get update && apt-get install -y \
     libu2f-udev \
     libvulkan1 \
     libxss1 \
-    libgconf-2-4 \
     libgtk-3-0 \
-    libgtk-4-1 \
     libnspr4 \
     libnss3 \
     libx11-xcb1 \
@@ -29,6 +27,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     libappindicator3-1 \
     lsb-release \
+    libglib2.0-0 \
+    libdbus-1-3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Chrome
